@@ -13,6 +13,8 @@ _CLASSES = (
     props.YatoVisGroup,
     props.YatoVisSnapshotEntry,
     props.YatoVisTransformSnapshot,
+    props.YatoVisTemplateKey,
+    props.YatoVisTemplate,
     props.YatoVisSceneSettings,
 )
 

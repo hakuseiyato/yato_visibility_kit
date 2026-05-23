@@ -10,6 +10,8 @@ from . import (
     group_ops,
     snapshot_ops,
     keyframe_ops,
+    burst_ops,
+    template_ops,
 )
 
 
@@ -33,6 +35,15 @@ _CLASSES = (
     snapshot_ops.YATOVIS_OT_snapshot_remove,
     snapshot_ops.YATOVIS_OT_snapshot_restore,
     snapshot_ops.YATOVIS_OT_snapshot_clean_dead_refs,
+    burst_ops.YATOVIS_OT_burst,
+    burst_ops.YATOVIS_OT_burst_camera_range,
+    template_ops.YATOVIS_OT_template_record,
+    template_ops.YATOVIS_OT_template_apply,
+    template_ops.YATOVIS_OT_template_remove,
+    template_ops.YATOVIS_OT_template_rename,
+    template_ops.YATOVIS_OT_template_load_defaults,
+    template_ops.YATOVIS_OT_template_export_json,
+    template_ops.YATOVIS_OT_template_import_json,
 )
 
 

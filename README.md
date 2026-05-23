@@ -12,7 +12,30 @@ Blender で個別オブジェクトの可視性を切り替えるとき、Object
 - `[Viewport]` `[Render]` `[Select]` のトグル — **全揃え方式**（1 個でも hide があれば全 show、全 show なら全 hide）
 - `[Show All]` / `[Hide All]` （Viewport + Render 同時）
 - Auto Keyframe（タイムラインの赤丸）と連動。トグル時にキー挿入
-- `[Key Visibility]` で現フレームに `hide_viewport` / `hide_render` を一括キー挿入
+
+### Burst（範囲限定の非表示/表示）
+「ここから〜ここまでだけ消したい」を 1 操作で実現。すべて CONSTANT 補間で挿入。
+
+**現フレーム + Duration 指定:**
+```
+F-1         F           F+Duration   F+Duration+1
+●           ●           ●            ●
+prev state  new state   new state    prev state
+(anchor)    (change)    (hold)       (return)
+```
+- `[Burst Hide]` / `[Burst Show]` — Duration（デフォルト 10F）を変えて即実行
+
+**現在のカメラバインド範囲に対する Burst:**
+- `[Cam Hide]` / `[Cam Show]` — 現フレームが含まれるカメラマーカー区間 `[A, B-1]` に対し `A-1 / A / B-1 / B` の 4 キーを挿入。カメラ切替の前後で元状態に自動復帰
+
+### Active Object（Kinema 風 icon row）
+Active Object セクション右上に集約:
+- `[● REC]` Auto KF トグル
+- `[Key All]` `hide_viewport` / `hide_render` を現フレームに一括キー挿入
+- `[Clear Unch.]` 値が変化していない可視性キーを削除
+- `[Copy→Template]` アクティブから新規テンプレ録音
+- `[Paste Template]` アクティブテンプレを選択に適用
+- `[🗑 All]` 可視性 fcurve を丸ごと削除
 
 ### Groups
 - Object 直指定 / Collection 参照 の混在メンバ
@@ -23,6 +46,15 @@ Blender で個別オブジェクトの可視性を切り替えるとき、Object
 
 ### Active Object Transform
 - N パネル「Item」を切り替えずに、Active の `location` / `rotation_euler` / `scale` を編集
+
+### Vis Templates（可視性キーのテンプレート）
+よく使うパターン（点滅・フラッシュ・「ここから消す」）を保存して、選択オブジェクトに貼り付ける。
+
+- **Record**: アクティブオブジェクトの `hide_viewport` / `hide_render` キーを相対フレームに変換して保存。フレーム範囲を絞ることも可
+- **Apply to Selected**: 選択全員にテンプレを broadcast。テンプレの `frame_offset=0` が **現フレーム** に来るよう相対配置。既存キーとは **マージ**（テンプレキー位置のみ上書き）
+- **Export / Import JSON**: ファイル経由で持ち運び・共有
+- **Load Defaults**: 同梱の `presets/default_templates.json` を読み込み
+  - `Hide Burst 10F` / `Hide Burst 5F` / `Flash Hide 1F` / `Show Burst 10F` / `Hide from here` / `Show from here`
 
 ### Snapshots
 - 選択オブジェクトの Transform を `matrix_basis` で保存（rotation_mode 非依存）

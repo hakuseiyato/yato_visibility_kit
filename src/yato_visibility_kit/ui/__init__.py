@@ -10,6 +10,7 @@ from . import main_panel
 _CLASSES = (
     main_panel.YATOVIS_UL_groups,
     main_panel.YATOVIS_UL_snapshots,
+    main_panel.YATOVIS_UL_templates,
     main_panel.YATOVIS_PT_main,
 )
 

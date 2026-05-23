@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "templates": [
+    {
+      "name": "Hide Burst 10F",
+      "note": "10 フレーム間 hide → 戻す（典型的な瞬間非表示）",
+      "keys": [
+        {"channel": "hide_viewport", "frame_offset": 0,  "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 0,  "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 10, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 10, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 11, "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 11, "value": false, "interpolation": "CONSTANT"}
+      ]
+    },
+    {
+      "name": "Hide Burst 5F",
+      "note": "5 フレーム間 hide → 戻す",
+      "keys": [
+        {"channel": "hide_viewport", "frame_offset": 0, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 0, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 5, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 5, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 6, "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 6, "value": false, "interpolation": "CONSTANT"}
+      ]
+    },
+    {
+      "name": "Flash Hide 1F",
+      "note": "1 フレームだけ hide（瞬きの黒コマ用途など）",
+      "keys": [
+        {"channel": "hide_viewport", "frame_offset": 0, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 0, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 1, "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 1, "value": false, "interpolation": "CONSTANT"}
+      ]
+    },
+    {
+      "name": "Show Burst 10F",
+      "note": "隠れているオブジェクトを 10F だけ見せる",
+      "keys": [
+        {"channel": "hide_viewport", "frame_offset": 0,  "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 0,  "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 10, "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 10, "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_viewport", "frame_offset": 11, "value": true,  "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 11, "value": true,  "interpolation": "CONSTANT"}
+      ]
+    },
+    {
+      "name": "Hide from here",
+      "note": "現フレーム以降ずっと非表示（戻さない）",
+      "keys": [
+        {"channel": "hide_viewport", "frame_offset": 0, "value": true, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 0, "value": true, "interpolation": "CONSTANT"}
+      ]
+    },
+    {
+      "name": "Show from here",
+      "note": "現フレーム以降ずっと表示（戻さない）",
+      "keys": [
+        {"channel": "hide_viewport", "frame_offset": 0, "value": false, "interpolation": "CONSTANT"},
+        {"channel": "hide_render",   "frame_offset": 0, "value": false, "interpolation": "CONSTANT"}
+      ]
+    }
+  ]
+}
