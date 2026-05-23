@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "yato_visibility_kit"
+version = "0.1.0"
+name = "Yato Visibility Kit"
+tagline = "Batch visibility toggle, groups, solo mode, and transform snapshots"
+maintainer = "Yato <hakuseiyato@example.com>"
+type = "add-on"
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+tags = ["Object", "Animation", "Interface"]
