@@ -18,7 +18,7 @@ from . import (
 _CLASSES = (
     visibility_ops.YATOVIS_OT_set_visibility,
     visibility_ops.YATOVIS_OT_toggle_auto_keyframe,
-    visibility_ops.YATOVIS_OT_key_visibility,
+    visibility_ops.YATOVIS_OT_key_all,
     keyframe_ops.YATOVIS_OT_clear_keys,
     group_ops.YATOVIS_OT_group_create,
     group_ops.YATOVIS_OT_group_remove,

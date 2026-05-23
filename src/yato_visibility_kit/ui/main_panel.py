@@ -205,7 +205,7 @@ class YATOVIS_PT_main(bpy.types.Panel):
             icon="REC" if ts.use_keyframe_insert_auto else "RADIOBUT_OFF",
             depress=ts.use_keyframe_insert_auto,
         )
-        key_row.operator("yato_vis.key_visibility", text="Key All", icon="KEY_HLT")
+        key_row.operator("yato_vis.key_all", text="Key All", icon="KEY_HLT")
         op = key_row.operator("yato_vis.clear_keys", text="", icon="KEY_DEHLT")
         op.scope = "VIS_REDUNDANT"
         key_row.operator("yato_vis.template_record", text="", icon="COPYDOWN")
