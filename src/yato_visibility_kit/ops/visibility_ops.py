@@ -131,16 +131,18 @@ class YATOVIS_OT_toggle_auto_keyframe(YatoVisOperator):
 
 
 class YATOVIS_OT_key_all(YatoVisOperator):
-    """選択オブジェクトの hide_viewport/hide_render + location/rotation/scale を一括キー。
+    """選択オブジェクトの location / rotation / scale を一括キー。
 
-    Active Object パネルに表示されている全項目をワンクリックでキーフレーム化する。
+    Active Object パネルに表示されている Transform 値をワンクリックでキーフレーム化する。
+    hide_viewport / hide_render は Burst / Templates / Quick Toggle 側で扱うため
+    本 Operator では触らない。
     rotation は obj.rotation_mode に従って euler / quaternion / axis_angle を自動選択。
     """
     bl_idname = "yato_vis.key_all"
     bl_label = "Key All"
     bl_description = (
-        "選択オブジェクトの hide_viewport / hide_render + location / rotation / scale を"
-        "現フレームに一括キーフレーム挿入（パネル表示中の全項目）"
+        "選択オブジェクトの location / rotation / scale を現フレームに一括キーフレーム挿入"
+        "（Visibility キーには干渉しない）"
     )
 
     def run(self, context):
@@ -151,14 +153,6 @@ class YATOVIS_OT_key_all(YatoVisOperator):
         frame = context.scene.frame_current
         count = 0
         for o in objs:
-            # Visibility
-            for a in _KEYABLE_ATTRS:
-                try:
-                    o.keyframe_insert(data_path=a, frame=frame)
-                    count += 1
-                except Exception:
-                    pass
-            # Transform — rotation_mode に応じて適切な path を選ぶ
             tf_paths = ["location", "scale"]
             mode = getattr(o, "rotation_mode", "XYZ")
             if mode == "QUATERNION":
@@ -173,5 +167,5 @@ class YATOVIS_OT_key_all(YatoVisOperator):
                     count += 1
                 except Exception:
                     pass
-        self.report({"INFO"}, f"{count} keys inserted @ frame {frame}")
+        self.report({"INFO"}, f"{count} transform keys inserted @ frame {frame}")
         return {"FINISHED"}
