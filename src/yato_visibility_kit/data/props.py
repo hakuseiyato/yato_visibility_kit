@@ -75,22 +75,30 @@ def _bound_object_poll(self, obj):
 
 
 def _bound_object_update(self, context):
-    """bound_object 変更時、Collection メンバの Solo target に同期 + 即適用。"""
+    """bound_object 変更時、Collection メンバの Solo target に同期 + 即適用。
+
+    Auto Keyframe が ON なら同時にキーフレーム挿入。
+    """
     if self.bound_object is None:
         return
     for m in self.members:
         if m.member_type != "COLLECTION" or m.collection_ref is None:
             continue
-        # Collection に属していなければスキップ（手動指定で外を指すケースは適用しない）
         if self.bound_object.name not in m.collection_ref.objects:
             continue
         m.solo_target = self.bound_object
         if not m.solo_enabled:
             m.solo_enabled = True
-        # 即時適用（遅延 import で循環参照回避）
         try:
             from ..ops.group_ops import _apply_solo  # noqa: PLC0415
-            _apply_solo(m, insert_keyframe=False)
+            scene = getattr(context, "scene", None)
+            kf = False
+            frame = None
+            if scene is not None:
+                kf = bool(scene.tool_settings.use_keyframe_insert_auto)
+                if kf:
+                    frame = scene.frame_current
+            _apply_solo(m, insert_keyframe=kf, frame=frame)
         except Exception:
             pass
         break

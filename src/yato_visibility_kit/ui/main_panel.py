@@ -18,10 +18,22 @@ class YATOVIS_UL_groups(bpy.types.UIList):
         name_icon = "AUTO" if item.is_auto else "GROUP"
         row.prop(item, "name", text="", emboss=False, icon=name_icon)
 
-        # Collection メンバを持つ Group は bound_object をインラインで編集可能に
-        has_coll = any(m.member_type == "COLLECTION" and m.collection_ref is not None for m in item.members)
-        if has_coll:
+        # Collection メンバを持つ Group は bound_object dropdown + 前後切替を行内に
+        coll_member_index = -1
+        for mi, m in enumerate(item.members):
+            if m.member_type == "COLLECTION" and m.collection_ref is not None:
+                coll_member_index = mi
+                break
+        if coll_member_index >= 0:
             row.prop(item, "bound_object", text="")
+            prev_op = row.operator("yato_vis.solo_step", text="", icon="TRIA_LEFT")
+            prev_op.group_index = index
+            prev_op.member_index = coll_member_index
+            prev_op.direction = "PREV"
+            next_op = row.operator("yato_vis.solo_step", text="", icon="TRIA_RIGHT")
+            next_op.group_index = index
+            next_op.member_index = coll_member_index
+            next_op.direction = "NEXT"
 
         op = row.operator("yato_vis.group_set_visibility", text="", icon="RESTRICT_VIEW_OFF")
         op.group_index = index

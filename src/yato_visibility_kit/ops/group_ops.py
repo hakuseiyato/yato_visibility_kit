@@ -351,12 +351,17 @@ class YATOVIS_OT_solo_step(YatoVisOperator):
             i = objs.index(cur)
             i = (i + 1) % len(objs) if self.direction == "NEXT" else (i - 1) % len(objs)
             new_target = objs[i]
-        member.solo_target = new_target
         if not member.solo_enabled:
             member.solo_enabled = True
-        kf = _should_keyframe(context)
-        frame = context.scene.frame_current if kf else None
-        _apply_solo(member, insert_keyframe=kf, frame=frame)
+        # bound_object 経由で更新 → update callback が solo_target 同期 + Auto KF 連動適用
+        # update callback は新値と等しい場合は発火しないので、その時のみ手動適用
+        if g.bound_object == new_target:
+            kf = _should_keyframe(context)
+            frame = context.scene.frame_current if kf else None
+            member.solo_target = new_target
+            _apply_solo(member, insert_keyframe=kf, frame=frame)
+        else:
+            g.bound_object = new_target
         self.report({"INFO"}, f"Solo → {new_target.name}")
         return {"FINISHED"}
 
