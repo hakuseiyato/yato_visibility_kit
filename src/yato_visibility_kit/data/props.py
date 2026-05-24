@@ -58,10 +58,59 @@ class YatoVisGroupMember(PropertyGroup):
     )
 
 
+def _bound_object_poll(self, obj):
+    """Group の COLLECTION メンバ内のオブジェクトのみ選択可能にする。
+
+    COLLECTION メンバが無ければ全 Object を許可（手動運用との両立）。
+    """
+    for m in self.members:
+        if m.member_type == "COLLECTION" and m.collection_ref is not None:
+            try:
+                if obj.name in m.collection_ref.objects:
+                    return True
+            except Exception:
+                pass
+            return False
+    return True
+
+
+def _bound_object_update(self, context):
+    """bound_object 変更時、Collection メンバの Solo target に同期 + 即適用。"""
+    if self.bound_object is None:
+        return
+    for m in self.members:
+        if m.member_type != "COLLECTION" or m.collection_ref is None:
+            continue
+        # Collection に属していなければスキップ（手動指定で外を指すケースは適用しない）
+        if self.bound_object.name not in m.collection_ref.objects:
+            continue
+        m.solo_target = self.bound_object
+        if not m.solo_enabled:
+            m.solo_enabled = True
+        # 即時適用（遅延 import で循環参照回避）
+        try:
+            from ..ops.group_ops import _apply_solo  # noqa: PLC0415
+            _apply_solo(m, insert_keyframe=False)
+        except Exception:
+            pass
+        break
+
+
 class YatoVisGroup(PropertyGroup):
     name: StringProperty(name="Name", default="Group")
     members: CollectionProperty(type=YatoVisGroupMember)
     expand: BoolProperty(default=False)
+    # Auto-detect で生成されたか否か（incremental update の判定用）
+    is_auto: BoolProperty(default=False)
+    # Item レベルのオブジェクトバインド。Collection メンバの Solo target と連動する
+    bound_object: PointerProperty(
+        name="Bound",
+        type=bpy.types.Object,
+        poll=_bound_object_poll,
+        update=_bound_object_update,
+        description="この Group が現在代表しているオブジェクト。"
+                    "Collection メンバを持つ場合、変更すると Solo target に同期して即時表示切替",
+    )
 
 
 class YatoVisSnapshotEntry(PropertyGroup):
@@ -105,6 +154,12 @@ class YatoVisSceneSettings(PropertyGroup):
     active_snapshot_index: IntProperty(default=0)
     templates: CollectionProperty(type=YatoVisTemplate)
     active_template_index: IntProperty(default=0)
+    # Auto-detect 用: 親コレクション名（直下の子コレクションをキャラとして検出）
+    parent_collection_name: StringProperty(
+        name="Parent Collection",
+        description="Auto-detect 対象の親コレクション名。直下の子コレクションを 1 キャラとして扱う",
+        default="_Chara",
+    )
     # Burst パターンの hold 期間（フレーム数）
     burst_duration: IntProperty(
         name="Burst Duration",

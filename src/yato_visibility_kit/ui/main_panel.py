@@ -12,8 +12,16 @@ class YATOVIS_UL_groups(bpy.types.UIList):
     bl_idname = "YATOVIS_UL_groups"
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        # 1 行目: 名前 + bound_object dropdown + 操作アイコン
         row = layout.row(align=True)
-        row.prop(item, "name", text="", emboss=False, icon="GROUP")
+        # is_auto なら歯車アイコン
+        name_icon = "AUTO" if item.is_auto else "GROUP"
+        row.prop(item, "name", text="", emboss=False, icon=name_icon)
+
+        # Collection メンバを持つ Group は bound_object をインラインで編集可能に
+        has_coll = any(m.member_type == "COLLECTION" and m.collection_ref is not None for m in item.members)
+        if has_coll:
+            row.prop(item, "bound_object", text="")
 
         op = row.operator("yato_vis.group_set_visibility", text="", icon="RESTRICT_VIEW_OFF")
         op.group_index = index
@@ -131,6 +139,11 @@ class YATOVIS_PT_main(bpy.types.Panel):
         row = gb.row(align=True)
         row.label(text=f"Groups ({len(st.groups)})", icon="GROUP")
         row.operator("yato_vis.group_clean_dead_refs", text="", icon="BRUSH_DATA")
+
+        # Auto-detect 行
+        auto_row = gb.row(align=True)
+        auto_row.prop(st, "parent_collection_name", text="Parent")
+        auto_row.operator("yato_vis.auto_detect_characters", text="", icon="ZOOM_ALL")
 
         list_row = gb.row(align=True)
         list_row.template_list(

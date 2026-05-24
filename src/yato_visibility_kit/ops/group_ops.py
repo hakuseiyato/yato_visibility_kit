@@ -365,6 +365,148 @@ class YATOVIS_OT_solo_step(YatoVisOperator):
 # Cleanup
 # ---------------------------------------------------------------------------
 
+class YATOVIS_OT_auto_detect_characters(YatoVisOperator):
+    """親コレクション直下の子コレクションをキャラ Group として自動検出。
+
+    検出ロジック:
+      - parent_collection_name の Collection を取得
+      - 直下の子コレクションごとに Group を作成（または既存を更新）
+        * COLLECTION メンバ 1 つ、solo_enabled=True、最初のオブジェクトを solo_target に
+        * bound_object は solo_target と同期
+      - 再帰下の EMPTY オブジェクトをまとめて Group "Empty" に集約
+
+    Incremental update:
+      - 既存の auto Group (is_auto=True) は collection_ref を最新化するが、
+        ユーザーが変更した bound_object / solo_target は保持
+      - 親コレクション側で消えた auto Group は削除
+      - 手動で作った Group (is_auto=False) は触らない
+    """
+    bl_idname = "yato_vis.auto_detect_characters"
+    bl_label = "Auto-detect Characters"
+    bl_description = (
+        "親コレクション直下の子コレクションをキャラ Group として自動検出。"
+        "再帰下の EMPTY は 'Empty' Group にまとめる"
+    )
+
+    EMPTY_GROUP_NAME = "Empty"
+
+    def _find_group_by_name(self, st, name: str):
+        for g in st.groups:
+            if g.name == name:
+                return g
+        return None
+
+    def _ensure_collection_group(self, st, name: str, coll) -> None:
+        g = self._find_group_by_name(st, name)
+        if g is None:
+            g = st.groups.add()
+            g.name = name
+            g.is_auto = True
+            m = g.members.add()
+            m.member_type = "COLLECTION"
+            m.collection_ref = coll
+            m.solo_enabled = True
+            first = next(iter(coll.objects), None)
+            if first is not None:
+                m.solo_target = first
+                # bound_object 経由で Solo 適用も走る
+                g.bound_object = first
+            return
+        # 既存 — collection_ref のみ最新化（ユーザー設定の bound_object/solo_target は保持）
+        g.is_auto = True
+        coll_member = None
+        for m in g.members:
+            if m.member_type == "COLLECTION":
+                coll_member = m
+                break
+        if coll_member is None:
+            coll_member = g.members.add()
+            coll_member.member_type = "COLLECTION"
+        coll_member.collection_ref = coll
+        # solo_target が collection 外を指していたら救済 (先頭オブジェクトへ)
+        if coll_member.solo_target is None or coll_member.solo_target.name not in coll.objects:
+            first = next(iter(coll.objects), None)
+            if first is not None:
+                coll_member.solo_target = first
+                if g.bound_object is None or g.bound_object.name not in coll.objects:
+                    g.bound_object = first
+
+    def _ensure_empty_group(self, st, empties: list) -> None:
+        g = self._find_group_by_name(st, self.EMPTY_GROUP_NAME)
+        if g is None:
+            g = st.groups.add()
+            g.name = self.EMPTY_GROUP_NAME
+            g.is_auto = True
+        g.is_auto = True
+        # メンバを Empty オブジェクト一覧で置き換え（OBJECT メンバのみ）
+        # ※ ユーザーが手動追加した OBJECT/COLLECTION メンバがあれば残せないが、
+        #    Empty Group は auto 専用想定なので置換でよい
+        g.members.clear()
+        for e in empties:
+            m = g.members.add()
+            m.member_type = "OBJECT"
+            m.object_ref = e
+
+    def _collect_empties(self, coll, out: list, seen: set) -> None:
+        for o in coll.objects:
+            if o.type == "EMPTY" and o.name not in seen:
+                out.append(o)
+                seen.add(o.name)
+        for child in coll.children:
+            self._collect_empties(child, out, seen)
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        parent_name = st.parent_collection_name.strip()
+        if not parent_name:
+            self.report({"WARNING"}, "親コレクション名が空です")
+            return {"CANCELLED"}
+        parent = bpy.data.collections.get(parent_name)
+        if parent is None:
+            self.report({"WARNING"}, f"親コレクションが見つかりません: '{parent_name}'")
+            return {"CANCELLED"}
+
+        # 1. 子コレクションごとに Group を ensure
+        child_collections = list(parent.children)
+        child_names = {c.name for c in child_collections}
+        for coll in child_collections:
+            self._ensure_collection_group(st, coll.name, coll)
+
+        # 2. Empty Group ensure
+        empties: list = []
+        seen: set = set()
+        self._collect_empties(parent, empties, seen)
+        if empties:
+            self._ensure_empty_group(st, empties)
+        else:
+            # Empty なし: 既存 Empty Group があれば削除
+            i = len(st.groups) - 1
+            while i >= 0:
+                g = st.groups[i]
+                if g.name == self.EMPTY_GROUP_NAME and g.is_auto:
+                    st.groups.remove(i)
+                i -= 1
+
+        # 3. 親コレクション側から消えた auto Group をクリーンアップ
+        i = len(st.groups) - 1
+        while i >= 0:
+            g = st.groups[i]
+            if g.is_auto and g.name != self.EMPTY_GROUP_NAME:
+                if g.name not in child_names:
+                    st.groups.remove(i)
+            i -= 1
+
+        # アクティブ index を範囲内に
+        st.active_group_index = max(0, min(st.active_group_index, len(st.groups) - 1))
+
+        self.report(
+            {"INFO"},
+            f"Auto-detect: {len(child_collections)} character(s), {len(empties)} empty object(s)",
+        )
+        return {"FINISHED"}
+
+
 class YATOVIS_OT_group_clean_dead_refs(YatoVisOperator):
     """全 Group から死んだ参照（None になった Object/Collection メンバ）を削除。"""
     bl_idname = "yato_vis.group_clean_dead_refs"
