@@ -48,6 +48,23 @@ class YATOVIS_UL_groups(bpy.types.UIList):
         op = row.operator("yato_vis.group_select", text="", icon="RESTRICT_SELECT_OFF")
         op.group_index = index
 
+        # Collection 自体の hide_* トグル（コレクション 1 個 = 1 キー）
+        has_coll_for_self_hide = any(
+            m.member_type == "COLLECTION" and m.collection_ref is not None
+            for m in item.members
+        )
+        if has_coll_for_self_hide:
+            row.separator(factor=0.6)
+            row.label(text="", icon="OUTLINER_COLLECTION")
+            op = row.operator("yato_vis.toggle_collection_hide", text="", icon="HIDE_OFF")
+            op.group_index = index
+            op.target = "VIEWPORT"
+            op.mode = "TOGGLE"
+            op = row.operator("yato_vis.toggle_collection_hide", text="", icon="RESTRICT_RENDER_OFF")
+            op.group_index = index
+            op.target = "RENDER"
+            op.mode = "TOGGLE"
+
         dead = 0
         alive = 0
         for m in item.members:

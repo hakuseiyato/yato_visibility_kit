@@ -21,8 +21,26 @@ from .visibility_ops import (
 )
 
 
+def _collect_collection_objects_recursive(coll, out: list, seen: set) -> None:
+    """coll とサブコレクション配下の全オブジェクトを out に追加。重複は seen で除外。"""
+    if coll is None:
+        return
+    for o in coll.objects:
+        if o is None:
+            continue
+        if o.name in seen:
+            continue
+        seen.add(o.name)
+        out.append(o)
+    for child in coll.children:
+        _collect_collection_objects_recursive(child, out, seen)
+
+
 def _group_member_objects(member) -> list:
-    """Group メンバから実際のオブジェクト一覧を取り出す。死んだ参照はスキップ。"""
+    """Group メンバから実際のオブジェクト一覧を取り出す。死んだ参照はスキップ。
+
+    COLLECTION メンバはサブコレクション配下まで再帰的に展開する。
+    """
     if member.member_type == "OBJECT":
         o = member.object_ref
         return [o] if o is not None else []
@@ -30,7 +48,10 @@ def _group_member_objects(member) -> list:
         c = member.collection_ref
         if c is None:
             return []
-        return [o for o in c.objects if o is not None]
+        out: list = []
+        seen: set = set()
+        _collect_collection_objects_recursive(c, out, seen)
+        return out
     return []
 
 
@@ -369,6 +390,72 @@ class YATOVIS_OT_solo_step(YatoVisOperator):
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
+
+class YATOVIS_OT_toggle_collection_hide(YatoVisOperator):
+    """Group 内 COLLECTION メンバの **Collection 自体** の hide_viewport/hide_render を操作。
+
+    オブジェクト個別の hide_* は触らず、Collection レベルの 1 プロパティで
+    配下全体を一括 ON/OFF する（アウトライナーの目玉アイコンと同じ振る舞い）。
+    1 コレクション = 1 キー で済むのでアニメーション軽量化にも有効。
+    """
+    bl_idname = "yato_vis.toggle_collection_hide"
+    bl_label = "Toggle Collection Hide"
+    bl_description = (
+        "Group 内 Collection 自身の hide_viewport / hide_render を一括トグル。"
+        "オブジェクト個別の hide_* には干渉せず、1 コレクション = 1 キーで制御"
+    )
+
+    group_index: IntProperty(default=-1)
+    target: EnumProperty(items=TARGET_ITEMS, default="VIEWPORT")
+    mode: EnumProperty(items=MODE_ITEMS, default="TOGGLE")
+
+    def run(self, context):
+        st = context.scene.yato_vis
+        idx = self.group_index if self.group_index >= 0 else st.active_group_index
+        if not (0 <= idx < len(st.groups)):
+            self.report({"WARNING"}, "Group が選択されていません")
+            return {"CANCELLED"}
+        g = st.groups[idx]
+        colls = [m.collection_ref for m in g.members
+                 if m.member_type == "COLLECTION" and m.collection_ref is not None]
+        if not colls:
+            self.report({"WARNING"}, f"Group '{g.name}' に Collection メンバがありません")
+            return {"CANCELLED"}
+        attrs = _ATTR_MAP.get(self.target, ())
+        if not attrs:
+            return {"CANCELLED"}
+        # 全コレクションに渡って混在検出 → 全揃え方式
+        if self.mode == "TOGGLE":
+            any_hidden = any(getattr(c, a, False) for c in colls for a in attrs)
+            new_value = not any_hidden
+        elif self.mode == "SHOW":
+            new_value = False
+        elif self.mode == "HIDE":
+            new_value = True
+        else:
+            return {"CANCELLED"}
+        kf = _should_keyframe(context)
+        frame = context.scene.frame_current if kf else None
+        changed = 0
+        for c in colls:
+            for a in attrs:
+                if getattr(c, a, None) is None:
+                    continue
+                if getattr(c, a) != new_value:
+                    setattr(c, a, new_value)
+                    changed += 1
+                if kf:
+                    try:
+                        c.keyframe_insert(data_path=a, frame=frame)
+                    except Exception:
+                        pass
+        kf_str = " +KF" if kf else ""
+        self.report(
+            {"INFO"},
+            f"Collection {self.mode} {self.target} on '{g.name}': {changed} changed{kf_str}",
+        )
+        return {"FINISHED"}
+
 
 class YATOVIS_OT_auto_detect_characters(YatoVisOperator):
     """親コレクション直下の子コレクションをキャラ Group として自動検出。

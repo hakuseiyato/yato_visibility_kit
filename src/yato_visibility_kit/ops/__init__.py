@@ -30,6 +30,7 @@ _CLASSES = (
     group_ops.YATOVIS_OT_group_set_visibility,
     group_ops.YATOVIS_OT_solo_apply,
     group_ops.YATOVIS_OT_solo_step,
+    group_ops.YATOVIS_OT_toggle_collection_hide,
     group_ops.YATOVIS_OT_auto_detect_characters,
     group_ops.YATOVIS_OT_group_clean_dead_refs,
     snapshot_ops.YATOVIS_OT_snapshot_create,
