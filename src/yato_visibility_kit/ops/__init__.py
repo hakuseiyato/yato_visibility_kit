@@ -19,6 +19,7 @@ _CLASSES = (
     visibility_ops.YATOVIS_OT_set_visibility,
     visibility_ops.YATOVIS_OT_toggle_auto_keyframe,
     visibility_ops.YATOVIS_OT_key_all,
+    visibility_ops.YATOVIS_OT_match_transform_to_active,
     keyframe_ops.YATOVIS_OT_clear_keys,
     group_ops.YATOVIS_OT_group_create,
     group_ops.YATOVIS_OT_group_remove,

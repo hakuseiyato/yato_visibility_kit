@@ -130,6 +130,104 @@ class YATOVIS_OT_toggle_auto_keyframe(YatoVisOperator):
         return {"FINISHED"}
 
 
+class YATOVIS_OT_match_transform_to_active(YatoVisOperator):
+    """選択オブジェクトの位置/回転/スケールをアクティブオブジェクトに揃える。
+
+    location, rotation_*, scale を個別 or 一括で揃えられる。アクティブ自身は対象外。
+    Auto KF ON なら反映と同時に各 path にキーフレーム挿入。
+    rotation は active.rotation_mode に合わせ、対象側の rotation_mode も自動で
+    一致させてから値をコピーする（mode 不一致を避ける）。
+    """
+    bl_idname = "yato_vis.match_transform_to_active"
+    bl_label = "Match Transform to Active"
+    bl_description = (
+        "選択オブジェクトの位置/回転/スケールをアクティブオブジェクトに揃える"
+        "（Auto KF ON で同時にキー挿入）"
+    )
+
+    use_location: BoolProperty(name="Location", default=True)
+    use_rotation: BoolProperty(name="Rotation", default=True)
+    use_scale: BoolProperty(name="Scale", default=True)
+
+    def _copy_rotation(self, src, dst) -> None:
+        """src.rotation_mode に合わせて dst の rotation を上書き。
+
+        dst.rotation_mode を src と同じに揃えてから値をコピー。
+        """
+        mode = getattr(src, "rotation_mode", "XYZ")
+        try:
+            dst.rotation_mode = mode
+        except Exception:
+            pass
+        if mode == "QUATERNION":
+            dst.rotation_quaternion = src.rotation_quaternion
+        elif mode == "AXIS_ANGLE":
+            dst.rotation_axis_angle = src.rotation_axis_angle
+        else:
+            dst.rotation_euler = src.rotation_euler
+
+    def run(self, context):
+        active = context.active_object
+        if active is None:
+            self.report({"WARNING"}, "アクティブオブジェクトがありません")
+            return {"CANCELLED"}
+        if not (self.use_location or self.use_rotation or self.use_scale):
+            self.report({"WARNING"}, "コピー対象が 1 つも有効になっていません")
+            return {"CANCELLED"}
+        targets = [o for o in (context.selected_objects or []) if o is not active]
+        if not targets:
+            self.report({"WARNING"}, "アクティブ以外の選択オブジェクトがありません")
+            return {"CANCELLED"}
+        kf = _should_keyframe(context)
+        frame = context.scene.frame_current if kf else None
+        count = 0
+        for dst in targets:
+            if self.use_location:
+                dst.location = active.location
+                if kf:
+                    try:
+                        dst.keyframe_insert(data_path="location", frame=frame)
+                    except Exception:
+                        pass
+                count += 1
+            if self.use_rotation:
+                self._copy_rotation(active, dst)
+                if kf:
+                    mode = getattr(active, "rotation_mode", "XYZ")
+                    if mode == "QUATERNION":
+                        path = "rotation_quaternion"
+                    elif mode == "AXIS_ANGLE":
+                        path = "rotation_axis_angle"
+                    else:
+                        path = "rotation_euler"
+                    try:
+                        dst.keyframe_insert(data_path=path, frame=frame)
+                    except Exception:
+                        pass
+                count += 1
+            if self.use_scale:
+                dst.scale = active.scale
+                if kf:
+                    try:
+                        dst.keyframe_insert(data_path="scale", frame=frame)
+                    except Exception:
+                        pass
+                count += 1
+        which = "/".join(
+            x for x, on in (
+                ("Loc", self.use_location),
+                ("Rot", self.use_rotation),
+                ("Scl", self.use_scale),
+            ) if on
+        )
+        kf_str = " +KF" if kf else ""
+        self.report(
+            {"INFO"},
+            f"Match {which} → Active '{active.name}' on {len(targets)} obj(s){kf_str}",
+        )
+        return {"FINISHED"}
+
+
 class YATOVIS_OT_key_all(YatoVisOperator):
     """選択オブジェクトの location / rotation / scale を一括キー。
 

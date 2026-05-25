@@ -245,6 +245,24 @@ class YATOVIS_PT_main(bpy.types.Panel):
             col.prop(act, "location")
             col.prop(act, "rotation_euler")
             col.prop(act, "scale")
+
+            # Match to Active（選択オブジェクトをアクティブの値に揃える）
+            match_box = ab.box()
+            match_box.label(text="Match selected → Active:", icon="PIVOT_ACTIVE")
+            mrow = match_box.row(align=True)
+            op = mrow.operator("yato_vis.match_transform_to_active", text="Loc", icon="OBJECT_ORIGIN")
+            op.use_location = True; op.use_rotation = False; op.use_scale = False
+            op = mrow.operator("yato_vis.match_transform_to_active", text="Rot", icon="ORIENTATION_GIMBAL")
+            op.use_location = False; op.use_rotation = True; op.use_scale = False
+            op = mrow.operator("yato_vis.match_transform_to_active", text="Scl", icon="OBJECT_DATA")
+            op.use_location = False; op.use_rotation = False; op.use_scale = True
+            op = match_box.operator(
+                "yato_vis.match_transform_to_active",
+                text="Match All",
+                icon="CHECKMARK",
+            )
+            op.use_location = True; op.use_rotation = True; op.use_scale = True
+
             tk_row = ab.row(align=True)
             tk_row.label(text="Clear TF Keys:", icon="KEY_DEHLT")
             op = tk_row.operator("yato_vis.clear_keys", text="Redund.")
