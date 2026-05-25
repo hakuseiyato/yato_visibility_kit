@@ -193,6 +193,20 @@ class YATOVIS_PT_main(bpy.types.Panel):
         btn_row.operator("yato_vis.group_add_selection", text="Add Sel", icon="ADD")
         btn_row.operator("yato_vis.group_add_collection", text="Add Coll", icon="OUTLINER_COLLECTION")
 
+        # アクティブ Group に対する選択操作（UIList 行内ボタンは選択時に
+        # 視認しづらいので、ここに同等の操作を露出）
+        sel_row = gb.row(align=True)
+        op = sel_row.operator(
+            "yato_vis.group_select", text="Select All", icon="RESTRICT_SELECT_OFF",
+        )
+        op.group_index = -1  # active_group_index を使う
+        op.only_visible = False
+        op = sel_row.operator(
+            "yato_vis.group_select", text="Select Visible", icon="EYEDROPPER",
+        )
+        op.group_index = -1
+        op.only_visible = True
+
         if 0 <= st.active_group_index < len(st.groups):
             g = st.groups[st.active_group_index]
             detail = gb.box()
