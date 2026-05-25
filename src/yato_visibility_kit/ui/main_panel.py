@@ -47,6 +47,11 @@ class YATOVIS_UL_groups(bpy.types.UIList):
 
         op = row.operator("yato_vis.group_select", text="", icon="RESTRICT_SELECT_OFF")
         op.group_index = index
+        op.only_visible = False
+        # 可視オブジェクトだけ選択（Solo で見えてる 1 個 = bound_object 相当）
+        op = row.operator("yato_vis.group_select", text="", icon="EYEDROPPER")
+        op.group_index = index
+        op.only_visible = True
 
         # Collection 自体の hide_* トグル（コレクション 1 個 = 1 キー）
         has_coll_for_self_hide = any(

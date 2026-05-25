@@ -221,6 +221,11 @@ class YATOVIS_OT_group_select(YatoVisOperator):
 
     group_index: IntProperty(default=-1)
     extend: BoolProperty(default=False)
+    only_visible: BoolProperty(
+        name="Only Visible",
+        description="hide_viewport==False のオブジェクトだけ選択（Solo モードで見えてるものだけ拾う）",
+        default=False,
+    )
 
     def run(self, context):
         st = context.scene.yato_vis
@@ -233,6 +238,8 @@ class YATOVIS_OT_group_select(YatoVisOperator):
         count = 0
         last = None
         for o in group_all_objects(st.groups[idx]):
+            if self.only_visible and getattr(o, "hide_viewport", False):
+                continue
             try:
                 o.select_set(True)
                 last = o
@@ -240,8 +247,12 @@ class YATOVIS_OT_group_select(YatoVisOperator):
             except Exception:
                 pass
         if last is not None:
-            context.view_layer.objects.active = last
-        self.report({"INFO"}, f"{count} objects selected")
+            try:
+                context.view_layer.objects.active = last
+            except Exception:
+                pass
+        suffix = " (visible only)" if self.only_visible else ""
+        self.report({"INFO"}, f"{count} objects selected{suffix}")
         return {"FINISHED"}
 
 
