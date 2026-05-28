@@ -369,39 +369,45 @@ class YATOVIS_PT_shot_cast(bpy.types.Panel):
             layout.label(text="Group がありません", icon="INFO")
             return
 
-        # 一括 Bake / 全クリア
+        # 一括 Bake / Import
         op_row = layout.row(align=True)
         op_row.operator("yato_vis.cast_bake_all", text="Bake All", icon="PLAY")
+        op_row.operator(
+            "yato_vis.cast_import_from_visibility",
+            text="Import from Visibility",
+            icon="IMPORT",
+        )
 
         # Cast マトリクス: 行 = Group, 列 = Shot
-        # Blender UI は table が無いので column を並べる
+        # 多ショット対応のため 10 個/行で折り返し
         layout.separator()
-        layout.label(text="行: Group / 列: Shot", icon="GROUP")
+        layout.label(text="行: Group / 列: Shot (10/行で折り返し)", icon="GROUP")
 
-        # まず列ヘッダ（shot 名）行
-        # スペース節約のため、shot ごとに小ブロックで描画
+        CHUNK = 10
         for gi, g in enumerate(st.groups):
             gbox = layout.box()
             grow = gbox.row(align=True)
-            # アクティブ Group をハイライト
             if gi == st.active_group_index:
                 grow.alert = True
             grow.label(text=g.name, icon="AUTO" if g.is_auto else "GROUP")
+            cast_count = len(g.cast_markers)
+            grow.label(text=f"{cast_count}/{len(cam_markers)}")
             bake = grow.operator("yato_vis.cast_bake_group", text="", icon="PLAY")
             bake.group_index = gi
 
-            cast_row = gbox.row(align=True)
-            cast_row.scale_x = 0.9
-            for m in cam_markers:
-                appears = any(c.marker_name == m.name for c in g.cast_markers)
-                op = cast_row.operator(
-                    "yato_vis.cast_toggle",
-                    text=m.name,
-                    depress=appears,
-                    icon="HIDE_OFF" if appears else "HIDE_ON",
-                )
-                op.group_index = gi
-                op.marker_name = m.name
+            # ショットボタンを CHUNK 個ずつチャンクして行を作る
+            for chunk_start in range(0, len(cam_markers), CHUNK):
+                cast_row = gbox.row(align=True)
+                cast_row.scale_y = 0.9
+                for m in cam_markers[chunk_start:chunk_start + CHUNK]:
+                    appears = any(c.marker_name == m.name for c in g.cast_markers)
+                    op = cast_row.operator(
+                        "yato_vis.cast_toggle",
+                        text=m.name,
+                        depress=appears,
+                    )
+                    op.group_index = gi
+                    op.marker_name = m.name
 
 
 # ---------------------------------------------------------------------------

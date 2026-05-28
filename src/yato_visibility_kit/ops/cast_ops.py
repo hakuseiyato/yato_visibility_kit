@@ -266,6 +266,93 @@ def get_visibility_keyframes(obj) -> list[tuple[str, int]]:
     return sorted(out, key=lambda x: (x[1], x[0]))
 
 
+def _eval_hide_viewport_at(obj, frame: int) -> bool:
+    """obj の hide_viewport を指定フレームで評価。
+
+    fcurve があれば fcurve.evaluate を使い、なければ現在値を返す。
+    scene.frame_set を呼ばないので副作用なし。
+    """
+    if obj is None:
+        return False
+    ad = getattr(obj, "animation_data", None)
+    if ad is not None and ad.action is not None:
+        action = ad.action
+        fcurves_iter = []
+        if hasattr(action, "fcurves"):
+            fcurves_iter = list(action.fcurves)
+        else:
+            for layer in getattr(action, "layers", None) or []:
+                for strip in getattr(layer, "strips", None) or []:
+                    for slot in getattr(action, "slots", None) or []:
+                        try:
+                            cb = strip.channelbag(slot)
+                        except Exception:
+                            cb = None
+                        if cb is None:
+                            continue
+                        fcurves_iter.extend(getattr(cb, "fcurves", []) or [])
+        for fc in fcurves_iter:
+            try:
+                if fc.data_path == "hide_viewport":
+                    return bool(fc.evaluate(frame) >= 0.5)
+            except Exception:
+                continue
+    return bool(getattr(obj, "hide_viewport", False))
+
+
+class YATOVIS_OT_cast_import_from_visibility(YatoVisOperator):
+    """各カメラマーカー先頭フレームでの可視状態から cast_markers を逆取り込み。
+
+    各 Group の所属オブジェクトについて、marker.frame での hide_viewport を
+    fcurve.evaluate で評価し、1 個でも可視 (False) なら "出演" と判定。
+    既存の cast_markers は全置換される（手動設定が消えるので明示操作のみ）。
+    """
+    bl_idname = "yato_vis.cast_import_from_visibility"
+    bl_label = "Import Cast from Visibility"
+    bl_description = (
+        "各カメラマーカー先頭フレームで hide_viewport を評価し、"
+        "各 Group の cast_markers に逆取り込み（既存設定は全置換）"
+    )
+
+    def invoke(self, context, event):  # noqa: ARG002
+        return context.window_manager.invoke_props_dialog(self, width=380)
+
+    def draw(self, context):  # noqa: ARG002
+        layout = self.layout
+        layout.label(text="現在のアニメーションから Cast 設定を取り込みます", icon="IMPORT")
+        layout.label(text="既存の cast_markers は全置換されます", icon="ERROR")
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        markers = _get_camera_markers(scene)
+        if not markers:
+            self.report({"WARNING"}, "カメラ付き Timeline Marker がありません")
+            return {"CANCELLED"}
+        if len(st.groups) == 0:
+            self.report({"WARNING"}, "Group がありません")
+            return {"CANCELLED"}
+        total_on = 0
+        for g in st.groups:
+            objs = group_all_objects(g)
+            if not objs:
+                # 空 Group はスキップ
+                continue
+            g.cast_markers.clear()
+            for m in markers:
+                # 1 個でも可視ならこの shot に出演
+                any_visible = any(not _eval_hide_viewport_at(o, m.frame) for o in objs)
+                if any_visible:
+                    entry = g.cast_markers.add()
+                    entry.marker_name = m.name
+                    total_on += 1
+        self.report(
+            {"INFO"},
+            f"Imported cast: {total_on} ON cells across {len(st.groups)} group(s) × {len(markers)} shot(s)",
+        )
+        return {"FINISHED"}
+
+
 class YATOVIS_OT_jump_to_keyframe(YatoVisOperator):
     """指定フレームへタイムラインジャンプ（hide_* キー探索用）。"""
     bl_idname = "yato_vis.jump_to_keyframe"
