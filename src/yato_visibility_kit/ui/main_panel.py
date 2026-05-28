@@ -168,6 +168,30 @@ class YATOVIS_PT_main(bpy.types.Panel):
         op = row.operator("yato_vis.burst_camera_range", text="Cam Show", icon="HIDE_OFF")
         op.state = "SHOW"; op.target = "BOTH"
 
+        # 出現/退場レンジ（Start/End 明示指定）
+        bb.separator()
+        bb.label(text="出現 / 退場 レンジ:", icon="PREVIEW_RANGE")
+        # Start 行
+        srow = bb.row(align=True)
+        srow.prop(st, "range_start", text="Start")
+        op = srow.operator("yato_vis.set_range_frame", text="", icon="REC")
+        op.which = "START"
+        op = srow.operator("yato_vis.jump_to_range_frame", text="", icon="PLAY")
+        op.which = "START"
+        # End 行
+        erow = bb.row(align=True)
+        erow.prop(st, "range_end", text="End")
+        op = erow.operator("yato_vis.set_range_frame", text="", icon="REC")
+        op.which = "END"
+        op = erow.operator("yato_vis.jump_to_range_frame", text="", icon="PLAY")
+        op.which = "END"
+        # Show/Hide ボタン
+        arow = bb.row(align=True)
+        op = arow.operator("yato_vis.burst_range", text="Show in Range", icon="HIDE_OFF")
+        op.state = "SHOW"; op.target = "BOTH"
+        op = arow.operator("yato_vis.burst_range", text="Hide in Range", icon="HIDE_ON")
+        op.state = "HIDE"; op.target = "BOTH"
+
         # --- Groups ---
         gb = layout.box()
         row = gb.row(align=True)

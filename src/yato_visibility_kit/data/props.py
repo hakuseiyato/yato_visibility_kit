@@ -176,3 +176,14 @@ class YatoVisSceneSettings(PropertyGroup):
         min=1,
         soft_max=240,
     )
+    # 出現/退場レンジ（明示 Start/End）
+    range_start: IntProperty(
+        name="Range Start",
+        description="Show/Hide from Start to End の開始フレーム",
+        default=1,
+    )
+    range_end: IntProperty(
+        name="Range End",
+        description="Show/Hide from Start to End の終了フレーム（hold key 位置）",
+        default=30,
+    )

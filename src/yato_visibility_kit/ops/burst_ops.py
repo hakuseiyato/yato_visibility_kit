@@ -222,6 +222,87 @@ class YATOVIS_OT_burst(YatoVisOperator):
         return {"FINISHED"}
 
 
+class YATOVIS_OT_set_range_frame(YatoVisOperator):
+    """range_start / range_end のいずれかを現フレームで上書き。"""
+    bl_idname = "yato_vis.set_range_frame"
+    bl_label = "Set Range Frame"
+    bl_description = "現フレームを Range Start / End に記録"
+
+    which: EnumProperty(
+        items=(("START", "Start", ""), ("END", "End", "")),
+        default="START",
+    )
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        f = scene.frame_current
+        if self.which == "START":
+            st.range_start = f
+        else:
+            st.range_end = f
+        self.report({"INFO"}, f"Range {self.which} = {f}")
+        return {"FINISHED"}
+
+
+class YATOVIS_OT_jump_to_range_frame(YatoVisOperator):
+    """range_start / range_end のフレームへタイムラインをジャンプ。"""
+    bl_idname = "yato_vis.jump_to_range_frame"
+    bl_label = "Jump to Range Frame"
+    bl_description = "Range Start / End のフレームへタイムラインをジャンプ"
+
+    which: EnumProperty(
+        items=(("START", "Start", ""), ("END", "End", "")),
+        default="START",
+    )
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        target = st.range_start if self.which == "START" else st.range_end
+        scene.frame_set(target)
+        return {"FINISHED"}
+
+
+class YATOVIS_OT_burst_range(YatoVisOperator):
+    """明示 Start/End 指定で Burst パターンを適用（出現/退場レンジ）。
+
+    Start-1 / Start / End / End+1 の 4 キー（Start==End なら 3 キー）を
+    CONSTANT 補間で挿入。Auto KF とは独立に必ずキー挿入する。
+    """
+    bl_idname = "yato_vis.burst_range"
+    bl_label = "Burst Range"
+    bl_description = (
+        "Range Start から Range End まで Show または Hide。"
+        "Start-1 / Start / End / End+1 の 4 キーを CONSTANT で挿入"
+    )
+
+    state: EnumProperty(items=STATE_ITEMS, default="SHOW")
+    target: EnumProperty(items=TARGET_ITEMS, default="BOTH")
+
+    def run(self, context):
+        objs = selected_objects(context)
+        if not objs:
+            self.report({"WARNING"}, "オブジェクトが選択されていません")
+            return {"CANCELLED"}
+        scene = context.scene
+        st = scene.yato_vis
+        start = int(st.range_start)
+        end = int(st.range_end)
+        if end < start:
+            start, end = end, start
+        new_state = (self.state == "HIDE")
+        channels = _CHANNELS_MAP.get(self.target, ())
+        total = 0
+        for o in objs:
+            total += _apply_burst(o, channels, start, end, new_state)
+        self.report(
+            {"INFO"},
+            f"Range {self.state} [{start-1}/{start} … {end}/{end+1}]: {total} keys on {len(objs)} obj(s)",
+        )
+        return {"FINISHED"}
+
+
 class YATOVIS_OT_burst_camera_range(YatoVisOperator):
     """現在のカメラバインド区間 [A, B-1] に対し Burst パターンキーを挿入。
 
