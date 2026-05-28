@@ -11,7 +11,7 @@ from . import (
     snapshot_ops,
     keyframe_ops,
     burst_ops,
-    template_ops,
+    cast_ops,
 )
 
 
@@ -43,13 +43,11 @@ _CLASSES = (
     burst_ops.YATOVIS_OT_jump_to_range_frame,
     burst_ops.YATOVIS_OT_burst_range,
     burst_ops.YATOVIS_OT_burst_camera_range,
-    template_ops.YATOVIS_OT_template_record,
-    template_ops.YATOVIS_OT_template_apply,
-    template_ops.YATOVIS_OT_template_remove,
-    template_ops.YATOVIS_OT_template_rename,
-    template_ops.YATOVIS_OT_template_load_defaults,
-    template_ops.YATOVIS_OT_template_export_json,
-    template_ops.YATOVIS_OT_template_import_json,
+    cast_ops.YATOVIS_OT_cast_toggle,
+    cast_ops.YATOVIS_OT_cast_bake_group,
+    cast_ops.YATOVIS_OT_cast_bake_all,
+    cast_ops.YATOVIS_OT_cast_clear_group,
+    cast_ops.YATOVIS_OT_jump_to_keyframe,
 )
 
 

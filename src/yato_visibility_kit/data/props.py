@@ -3,17 +3,14 @@
 データモデル:
   Scene.yato_vis (YatoVisSceneSettings)
     ├ groups: CollectionProperty(YatoVisGroup)
-    │   └ members: CollectionProperty(YatoVisGroupMember)
-    │       member_type ∈ {OBJECT, COLLECTION}
-    │       Collection の場合は Solo モード対応
+    │   ├ members: CollectionProperty(YatoVisGroupMember)
+    │   │   member_type ∈ {OBJECT, COLLECTION}
+    │   └ cast_markers: CollectionProperty(YatoVisCastMarker)
+    │       Camera Marker 名のリスト。ここに含まれるショットでは Group が出演
     ├ snapshots: CollectionProperty(YatoVisTransformSnapshot)
     │   └ entries: CollectionProperty(YatoVisSnapshotEntry)
-    │       matrix_basis / matrix_world を 16 float で保持
-    ├ templates: CollectionProperty(YatoVisTemplate)
-    │   └ keys: CollectionProperty(YatoVisTemplateKey)
-    │       channel ∈ {hide_viewport, hide_render}
-    │       frame_offset / value / interpolation
-    └ burst_duration: IntProperty (Burst パターンの hold 期間, デフォルト 10)
+    ├ burst_duration: IntProperty (Burst hold 期間)
+    └ range_start / range_end: IntProperty (出現/退場レンジ)
 """
 
 from __future__ import annotations
@@ -58,11 +55,13 @@ class YatoVisGroupMember(PropertyGroup):
     )
 
 
-def _bound_object_poll(self, obj):
-    """Group の COLLECTION メンバ内のオブジェクトのみ選択可能にする。
+class YatoVisCastMarker(PropertyGroup):
+    """Camera Marker 名の参照。Group.cast_markers の要素として「このショットに出る」を示す。"""
+    marker_name: StringProperty(name="Marker", default="")
 
-    COLLECTION メンバが無ければ全 Object を許可（手動運用との両立）。
-    """
+
+def _bound_object_poll(self, obj):
+    """Group の COLLECTION メンバ内のオブジェクトのみ選択可能にする。"""
     for m in self.members:
         if m.member_type == "COLLECTION" and m.collection_ref is not None:
             try:
@@ -75,10 +74,7 @@ def _bound_object_poll(self, obj):
 
 
 def _bound_object_update(self, context):
-    """bound_object 変更時、Collection メンバの Solo target に同期 + 即適用。
-
-    Auto Keyframe が ON なら同時にキーフレーム挿入。
-    """
+    """bound_object 変更時、Collection メンバの Solo target に同期 + 即適用。"""
     if self.bound_object is None:
         return
     for m in self.members:
@@ -108,9 +104,7 @@ class YatoVisGroup(PropertyGroup):
     name: StringProperty(name="Name", default="Group")
     members: CollectionProperty(type=YatoVisGroupMember)
     expand: BoolProperty(default=False)
-    # Auto-detect で生成されたか否か（incremental update の判定用）
     is_auto: BoolProperty(default=False)
-    # Item レベルのオブジェクトバインド。Collection メンバの Solo target と連動する
     bound_object: PointerProperty(
         name="Bound",
         type=bpy.types.Object,
@@ -119,13 +113,13 @@ class YatoVisGroup(PropertyGroup):
         description="この Group が現在代表しているオブジェクト。"
                     "Collection メンバを持つ場合、変更すると Solo target に同期して即時表示切替",
     )
+    # Shot Cast: この Group が出演する Camera Marker 名のリスト
+    cast_markers: CollectionProperty(type=YatoVisCastMarker)
 
 
 class YatoVisSnapshotEntry(PropertyGroup):
     object_ref: PointerProperty(name="Object", type=bpy.types.Object)
-    # matrix_basis (parent local transform) — 復元のメイン
     matrix_basis: FloatVectorProperty(size=16, subtype="MATRIX")
-    # matrix_world — フォールバック / デバッグ
     matrix_world: FloatVectorProperty(size=16, subtype="MATRIX")
 
 
@@ -134,49 +128,23 @@ class YatoVisTransformSnapshot(PropertyGroup):
     entries: CollectionProperty(type=YatoVisSnapshotEntry)
 
 
-CHANNEL_ITEMS = (
-    ("hide_viewport", "Viewport", "Object Properties > Visibility > Viewport", "RESTRICT_VIEW_OFF", 0),
-    ("hide_render", "Render", "Object Properties > Visibility > Render", "RESTRICT_RENDER_OFF", 1),
-)
-
-
-class YatoVisTemplateKey(PropertyGroup):
-    """テンプレ内の単一キーフレーム。frame_offset は最初のキーを 0 とした相対値。"""
-    channel: EnumProperty(items=CHANNEL_ITEMS, default="hide_viewport")
-    frame_offset: IntProperty(default=0)
-    value: BoolProperty(default=False)
-    # CONSTANT / LINEAR / BEZIER の文字列を保持（Blender enum と互換）
-    interpolation: StringProperty(default="CONSTANT")
-
-
-class YatoVisTemplate(PropertyGroup):
-    name: StringProperty(name="Name", default="Template")
-    note: StringProperty(name="Note", default="")
-    keys: CollectionProperty(type=YatoVisTemplateKey)
-
-
 class YatoVisSceneSettings(PropertyGroup):
     groups: CollectionProperty(type=YatoVisGroup)
     active_group_index: IntProperty(default=0)
     snapshots: CollectionProperty(type=YatoVisTransformSnapshot)
     active_snapshot_index: IntProperty(default=0)
-    templates: CollectionProperty(type=YatoVisTemplate)
-    active_template_index: IntProperty(default=0)
-    # Auto-detect 用: 親コレクション名（直下の子コレクションをキャラとして検出）
+    # Auto-detect 用: 親コレクション名
     parent_collection_name: StringProperty(
         name="Parent Collection",
         description="Auto-detect 対象の親コレクション名。直下の子コレクションを 1 キャラとして扱う",
         default="_Chara",
     )
-    # Burst パターンの hold 期間（フレーム数）
+    # Burst パターン
     burst_duration: IntProperty(
         name="Burst Duration",
-        description="Burst Hide/Show の hold 期間。F=現フレームから F+duration まで新状態を保持し、F+duration+1 で元に戻す",
-        default=10,
-        min=1,
-        soft_max=240,
+        description="Burst Hide/Show の hold 期間",
+        default=10, min=1, soft_max=240,
     )
-    # 出現/退場レンジ（明示 Start/End）
     range_start: IntProperty(
         name="Range Start",
         description="Show/Hide from Start to End の開始フレーム",
@@ -184,6 +152,12 @@ class YatoVisSceneSettings(PropertyGroup):
     )
     range_end: IntProperty(
         name="Range End",
-        description="Show/Hide from Start to End の終了フレーム（hold key 位置）",
+        description="Show/Hide from Start to End の終了フレーム",
         default=30,
+    )
+    # Shot Cast 用: 自動 Bake モード（チェックボックス変更で即キー反映）
+    cast_auto_bake: BoolProperty(
+        name="Auto Bake",
+        description="Shot Cast のチェックボックス変更時に自動でキーフレームへ反映",
+        default=True,
     )

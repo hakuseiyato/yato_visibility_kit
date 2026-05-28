@@ -47,14 +47,14 @@ Active Object セクション右上に集約:
 ### Active Object Transform
 - N パネル「Item」を切り替えずに、Active の `location` / `rotation_euler` / `scale` を編集
 
-### Vis Templates（可視性キーのテンプレート）
-よく使うパターン（点滅・フラッシュ・「ここから消す」）を保存して、選択オブジェクトに貼り付ける。
+### Shot Cast（カットごとのキャスト管理）
+カメラ付き Timeline Marker を「ショット」とみなし、各 Group がどのショットに出演するかをチェックボックスで設定する。
 
-- **Record**: アクティブオブジェクトの `hide_viewport` / `hide_render` キーを相対フレームに変換して保存。フレーム範囲を絞ることも可
-- **Apply to Selected**: 選択全員にテンプレを broadcast。テンプレの `frame_offset=0` が **現フレーム** に来るよう相対配置。既存キーとは **マージ**（テンプレキー位置のみ上書き）
-- **Export / Import JSON**: ファイル経由で持ち運び・共有
-- **Load Defaults**: 同梱の `presets/default_templates.json` を読み込み
-  - `Hide Burst 10F` / `Hide Burst 5F` / `Flash Hide 1F` / `Show Burst 10F` / `Hide from here` / `Show from here`
+- 行 = Group、列 = ショット（marker 名）のマトリクス UI
+- チェックを切り替えると **Auto Bake** が動き、その Group の `hide_viewport` / `hide_render` に CONSTANT 補間でキー挿入される
+- 各 marker 境界で出演フラグが変わるところだけにキーが立つ（CONSTANT が値を保持するので最小キー）
+- `[Bake All]` で全 Group を一括再キー
+- 「非表示になるとキーがどこにあるか分からなくなる」問題への対策として、Group 詳細にキーフレーム frame 番号をクリッカブルに一覧表示
 
 ### Snapshots
 - 選択オブジェクトの Transform を `matrix_basis` で保存（rotation_mode 非依存）

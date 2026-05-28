@@ -232,7 +232,7 @@ class YATOVIS_OT_key_all(YatoVisOperator):
     """選択オブジェクトの location / rotation / scale を一括キー。
 
     Active Object パネルに表示されている Transform 値をワンクリックでキーフレーム化する。
-    hide_viewport / hide_render は Burst / Templates / Quick Toggle 側で扱うため
+    hide_viewport / hide_render は Burst / Shot Cast / Quick Toggle 側で扱うため
     本 Operator では触らない。
     rotation は obj.rotation_mode に従って euler / quaternion / axis_angle を自動選択。
     """

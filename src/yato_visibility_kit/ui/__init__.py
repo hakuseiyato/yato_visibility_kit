@@ -10,8 +10,14 @@ from . import main_panel
 _CLASSES = (
     main_panel.YATOVIS_UL_groups,
     main_panel.YATOVIS_UL_snapshots,
-    main_panel.YATOVIS_UL_templates,
+    # 親パネルを先に
     main_panel.YATOVIS_PT_main,
+    main_panel.YATOVIS_PT_quick,
+    main_panel.YATOVIS_PT_burst,
+    main_panel.YATOVIS_PT_groups,
+    main_panel.YATOVIS_PT_shot_cast,
+    main_panel.YATOVIS_PT_active,
+    main_panel.YATOVIS_PT_snapshots,
 )
 
 

@@ -10,11 +10,10 @@ from . import props
 _CLASSES = (
     # 親子順: 子要素クラスを先に register
     props.YatoVisGroupMember,
+    props.YatoVisCastMarker,
     props.YatoVisGroup,
     props.YatoVisSnapshotEntry,
     props.YatoVisTransformSnapshot,
-    props.YatoVisTemplateKey,
-    props.YatoVisTemplate,
     props.YatoVisSceneSettings,
 )
 
