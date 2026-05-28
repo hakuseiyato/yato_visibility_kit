@@ -104,29 +104,37 @@ def _insert_visibility_key(obj, channel: str, frame: int, value: bool) -> None:
                 break
 
 
-def bake_group_cast(scene, group) -> int:
+def bake_group_cast(scene, group) -> tuple[int, int]:
     """1 Group の cast_markers を hide_viewport / hide_render キーへ反映。
 
-    挿入キー数を返す。
+    Shot Cast 優先: 既存の hide_viewport / hide_render fcurve は一度全削除してから
+    cast_markers に従って CONSTANT 補間で再構築する。
+
+    Returns: (cleared_fcurves, inserted_keys)
     """
     markers = _get_camera_markers(scene)
     if not markers:
-        return 0
+        return (0, 0)
     objs = group_all_objects(group)
     if not objs:
-        return 0
+        return (0, 0)
+    # 1. 既存の hide_viewport / hide_render fcurve を全削除（Shot Cast を権威に）
+    from .keyframe_ops import _delete_matching
+    cleared = 0
+    for o in objs:
+        cleared += _delete_matching(o, ("hide_viewport", "hide_render"), "ALL")
+    # 2. cast_markers に従ってキー再挿入
     inserted = 0
     for o in objs:
         prev_visible = None
         for m in markers:
             visible = _group_appears_in(group, m.name)
             if prev_visible is None or visible != prev_visible:
-                # hide_viewport = not visible, hide_render = not visible
                 _insert_visibility_key(o, "hide_viewport", m.frame, not visible)
                 _insert_visibility_key(o, "hide_render", m.frame, not visible)
                 inserted += 2
             prev_visible = visible
-    return inserted
+    return (cleared, inserted)
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +165,12 @@ class YATOVIS_OT_cast_toggle(YatoVisOperator):
         currently = _group_appears_in(g, self.marker_name)
         _set_group_appearance(g, self.marker_name, not currently)
         if st.cast_auto_bake:
-            n = bake_group_cast(scene, g)
+            cleared, inserted = bake_group_cast(scene, g)
             self.report(
                 {"INFO"},
-                f"'{g.name}' @ '{self.marker_name}' → {'ON' if not currently else 'OFF'}, baked {n} keys",
+                f"'{g.name}' @ '{self.marker_name}' → "
+                f"{'ON' if not currently else 'OFF'}, "
+                f"re-baked ({cleared} cleared / {inserted} keys)",
             )
         else:
             self.report(
@@ -186,8 +196,11 @@ class YATOVIS_OT_cast_bake_group(YatoVisOperator):
             self.report({"WARNING"}, "Group が選択されていません")
             return {"CANCELLED"}
         g = st.groups[idx]
-        n = bake_group_cast(scene, g)
-        self.report({"INFO"}, f"Baked '{g.name}': {n} keys")
+        cleared, inserted = bake_group_cast(scene, g)
+        self.report(
+            {"INFO"},
+            f"Re-baked '{g.name}': {cleared} fcurves cleared, {inserted} keys inserted",
+        )
         return {"FINISHED"}
 
 
@@ -200,10 +213,17 @@ class YATOVIS_OT_cast_bake_all(YatoVisOperator):
     def run(self, context):
         scene = context.scene
         st = scene.yato_vis
-        total = 0
+        total_cleared = 0
+        total_inserted = 0
         for g in st.groups:
-            total += bake_group_cast(scene, g)
-        self.report({"INFO"}, f"Baked {len(st.groups)} group(s): {total} keys total")
+            cleared, inserted = bake_group_cast(scene, g)
+            total_cleared += cleared
+            total_inserted += inserted
+        self.report(
+            {"INFO"},
+            f"Re-baked {len(st.groups)} group(s): "
+            f"{total_cleared} fcurves cleared, {total_inserted} keys inserted",
+        )
         return {"FINISHED"}
 
 
