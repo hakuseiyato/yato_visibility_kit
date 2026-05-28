@@ -46,6 +46,8 @@ _CLASSES = (
     cast_ops.YATOVIS_OT_cast_toggle,
     cast_ops.YATOVIS_OT_cast_bake_group,
     cast_ops.YATOVIS_OT_cast_bake_all,
+    cast_ops.YATOVIS_OT_cast_bake_group_solo,
+    cast_ops.YATOVIS_OT_cast_bake_all_solo,
     cast_ops.YATOVIS_OT_cast_clear_group,
     cast_ops.YATOVIS_OT_cast_import_from_visibility,
     cast_ops.YATOVIS_OT_jump_to_keyframe,

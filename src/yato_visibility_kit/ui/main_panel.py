@@ -305,6 +305,23 @@ class YATOVIS_PT_groups(bpy.types.Panel):
                 rm = mr.operator("yato_vis.group_remove_member", text="", icon="X")
                 rm.group_index = idx; rm.member_index = mi
 
+        # Shot Cast 操作（このグループに対する Bake）
+        cast_box = detail.box()
+        cast_box.label(text="Shot Cast:", icon="MARKER_HLT")
+        cast_row = cast_box.row(align=True)
+        op = cast_row.operator("yato_vis.cast_bake_group", text="Bake", icon="PLAY")
+        op.group_index = idx
+        # Solo Bake — bound_object だけ ON 期間中に可視
+        op = cast_row.operator(
+            "yato_vis.cast_bake_group_solo",
+            text="Solo Bake",
+            icon="SOLO_ON",
+        )
+        op.group_index = idx
+        # 解除
+        op = cast_row.operator("yato_vis.cast_clear_group", text="", icon="TRASH")
+        op.group_index = idx
+
         # キーフレーム一覧 (見えなくなったキーを探す用)
         kf_frames = _collect_group_visibility_frames(g)
         if kf_frames:
@@ -369,12 +386,17 @@ class YATOVIS_PT_shot_cast(bpy.types.Panel):
             layout.label(text="Group がありません", icon="INFO")
             return
 
-        # 一括 Bake / Import
+        # 一括 Bake / Solo Bake / Import
         op_row = layout.row(align=True)
         op_row.operator("yato_vis.cast_bake_all", text="Bake All", icon="PLAY")
         op_row.operator(
+            "yato_vis.cast_bake_all_solo",
+            text="Solo Bake All",
+            icon="SOLO_ON",
+        )
+        op_row.operator(
             "yato_vis.cast_import_from_visibility",
-            text="Import from Visibility",
+            text="Import",
             icon="IMPORT",
         )
 
@@ -394,6 +416,11 @@ class YATOVIS_PT_shot_cast(bpy.types.Panel):
             grow.label(text=f"{cast_count}/{len(cam_markers)}")
             bake = grow.operator("yato_vis.cast_bake_group", text="", icon="PLAY")
             bake.group_index = gi
+            # Solo Bake — bound_object だけ ON 期間中に可視
+            solo_bake = grow.operator(
+                "yato_vis.cast_bake_group_solo", text="", icon="SOLO_ON",
+            )
+            solo_bake.group_index = gi
 
             # ショットボタンを CHUNK 個ずつチャンクして行を作る
             for chunk_start in range(0, len(cam_markers), CHUNK):

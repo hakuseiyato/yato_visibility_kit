@@ -104,11 +104,26 @@ def _insert_visibility_key(obj, channel: str, frame: int, value: bool) -> None:
                 break
 
 
-def bake_group_cast(scene, group) -> tuple[int, int]:
+def _resolve_solo_target(group):
+    """Group の Solo target を決定。bound_object 優先、なければ最初の COLLECTION メンバの solo_target。"""
+    if group.bound_object is not None:
+        return group.bound_object
+    for m in group.members:
+        if m.member_type == "COLLECTION" and m.solo_target is not None:
+            return m.solo_target
+    return None
+
+
+def bake_group_cast(scene, group, solo_mode: bool = False) -> tuple[int, int]:
     """1 Group の cast_markers を hide_viewport / hide_render キーへ反映。
 
     Shot Cast 優先: 既存の hide_viewport / hide_render fcurve は一度全削除してから
     cast_markers に従って CONSTANT 補間で再構築する。
+
+    solo_mode=True のとき:
+      - bound_object (or 最初の COLLECTION メンバの solo_target) のみ ON 中に可視
+      - 同 Group 内の他オブジェクトは ON 中も非表示（Solo target 1 個だけが見える）
+      - OFF 期間中は通常モードと同じく全員非表示
 
     Returns: (cleared_fcurves, inserted_keys)
     """
@@ -118,22 +133,33 @@ def bake_group_cast(scene, group) -> tuple[int, int]:
     objs = group_all_objects(group)
     if not objs:
         return (0, 0)
-    # 1. 既存の hide_viewport / hide_render fcurve を全削除（Shot Cast を権威に）
+
+    solo_obj = _resolve_solo_target(group) if solo_mode else None
+
+    # 1. 既存の hide_viewport / hide_render fcurve を全削除
     from .keyframe_ops import _delete_matching
     cleared = 0
     for o in objs:
         cleared += _delete_matching(o, ("hide_viewport", "hide_render"), "ALL")
+
     # 2. cast_markers に従ってキー再挿入
     inserted = 0
     for o in objs:
-        prev_visible = None
+        is_solo = (solo_obj is not None and o.name == solo_obj.name)
+        prev_hidden = None
         for m in markers:
-            visible = _group_appears_in(group, m.name)
-            if prev_visible is None or visible != prev_visible:
-                _insert_visibility_key(o, "hide_viewport", m.frame, not visible)
-                _insert_visibility_key(o, "hide_render", m.frame, not visible)
+            cast_on = _group_appears_in(group, m.name)
+            if solo_mode and solo_obj is not None:
+                # Solo モード: ON 中は solo_obj のみ可視、他は非表示
+                hidden = not (cast_on and is_solo)
+            else:
+                # 通常モード: ON ならグループ全員可視、OFF なら全員非表示
+                hidden = not cast_on
+            if prev_hidden is None or hidden != prev_hidden:
+                _insert_visibility_key(o, "hide_viewport", m.frame, hidden)
+                _insert_visibility_key(o, "hide_render", m.frame, hidden)
                 inserted += 2
-            prev_visible = visible
+            prev_hidden = hidden
     return (cleared, inserted)
 
 
@@ -223,6 +249,73 @@ class YATOVIS_OT_cast_bake_all(YatoVisOperator):
             {"INFO"},
             f"Re-baked {len(st.groups)} group(s): "
             f"{total_cleared} fcurves cleared, {total_inserted} keys inserted",
+        )
+        return {"FINISHED"}
+
+
+class YATOVIS_OT_cast_bake_group_solo(YatoVisOperator):
+    """Solo モードで Bake — bound_object のみ ON 期間中に可視、他は非表示。"""
+    bl_idname = "yato_vis.cast_bake_group_solo"
+    bl_label = "Bake Cast (Solo)"
+    bl_description = (
+        "Shot Cast を Solo モードで Bake。"
+        "出演 ON のショット中、bound_object (or solo_target) だけ可視、"
+        "Group 内の他オブジェクトは非表示にする（表情差分などで 1 個だけ見せる用途）"
+    )
+
+    group_index: IntProperty(default=-1)
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        idx = self.group_index if self.group_index >= 0 else st.active_group_index
+        if not (0 <= idx < len(st.groups)):
+            self.report({"WARNING"}, "Group が選択されていません")
+            return {"CANCELLED"}
+        g = st.groups[idx]
+        solo = _resolve_solo_target(g)
+        if solo is None:
+            self.report(
+                {"WARNING"},
+                f"'{g.name}' に bound_object / solo_target がありません。通常 Bake をご利用ください",
+            )
+            return {"CANCELLED"}
+        cleared, inserted = bake_group_cast(scene, g, solo_mode=True)
+        self.report(
+            {"INFO"},
+            f"Solo Bake '{g.name}' (target={solo.name}): "
+            f"{cleared} cleared, {inserted} keys",
+        )
+        return {"FINISHED"}
+
+
+class YATOVIS_OT_cast_bake_all_solo(YatoVisOperator):
+    """全 Group を Solo モードで Bake。Solo target が無い Group は通常 Bake にフォールバック。"""
+    bl_idname = "yato_vis.cast_bake_all_solo"
+    bl_label = "Bake All (Solo)"
+    bl_description = (
+        "全 Group を Solo モードで一括 Bake。"
+        "bound_object / solo_target が無い Group は通常モードで Bake"
+    )
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        total_cleared = 0
+        total_inserted = 0
+        solo_count = 0
+        for g in st.groups:
+            solo = _resolve_solo_target(g)
+            use_solo = (solo is not None)
+            cleared, inserted = bake_group_cast(scene, g, solo_mode=use_solo)
+            total_cleared += cleared
+            total_inserted += inserted
+            if use_solo:
+                solo_count += 1
+        self.report(
+            {"INFO"},
+            f"Solo Bake All: {solo_count}/{len(st.groups)} solo, "
+            f"{total_cleared} cleared, {total_inserted} keys",
         )
         return {"FINISHED"}
 
