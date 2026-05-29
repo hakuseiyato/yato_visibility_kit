@@ -11,6 +11,7 @@ _CLASSES = (
     # 親子順: 子要素クラスを先に register
     props.YatoVisGroupMember,
     props.YatoVisCastMarker,
+    props.YatoVisBakedMarker,
     props.YatoVisGroup,
     props.YatoVisSnapshotEntry,
     props.YatoVisTransformSnapshot,

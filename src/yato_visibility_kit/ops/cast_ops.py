@@ -104,6 +104,107 @@ def _insert_visibility_key(obj, channel: str, frame: int, value: bool) -> None:
                 break
 
 
+def _iter_action_fcurves(action):
+    """Layered Actions 両対応で fcurve を yield。"""
+    if action is None:
+        return
+    if hasattr(action, "fcurves"):
+        for fc in list(action.fcurves):
+            yield fc
+        return
+    for layer in getattr(action, "layers", None) or []:
+        for strip in getattr(layer, "strips", None) or []:
+            for slot in getattr(action, "slots", None) or []:
+                try:
+                    cb = strip.channelbag(slot)
+                except Exception:
+                    cb = None
+                if cb is None:
+                    continue
+                for fc in list(getattr(cb, "fcurves", []) or []):
+                    yield fc
+
+
+def _clear_keys_at_frames(obj, channels: tuple, frames_set: set) -> int:
+    """obj の指定 channels (hide_viewport / hide_render 等) の指定フレーム群に
+    あるキーフレームポイントだけを削除（fcurve 自体は残す）。
+
+    削除キー数を返す。
+    """
+    if obj is None or obj.animation_data is None or obj.animation_data.action is None:
+        return 0
+    removed = 0
+    for fc in _iter_action_fcurves(obj.animation_data.action):
+        try:
+            if fc.data_path not in channels:
+                continue
+        except Exception:
+            continue
+        # まず削除対象 kp を集める（インデックスで集めると後段で崩れるため参照保持）
+        targets = []
+        for kp in fc.keyframe_points:
+            if int(round(kp.co.x)) in frames_set:
+                targets.append(kp)
+        for kp in targets:
+            try:
+                fc.keyframe_points.remove(kp)
+                removed += 1
+            except Exception:
+                pass
+    return removed
+
+
+def _get_old_marker_frames_to_clear(scene, st) -> set:
+    """前回 Bake 時のマーカーのうち、現マーカー名集合に無いもの（=削除/リネーム）の frame 集合。"""
+    current_names = {m.name for m in _get_camera_markers(scene)}
+    return {entry.frame for entry in st.last_baked_markers if entry.marker_name not in current_names}
+
+
+def sync_inherit_new_markers(scene, st) -> int:
+    """新規追加マーカーについて、直前マーカーの cast 設定を継承する。
+
+    新規 = last_baked_markers に名前が無いもの。
+    継承基準 = frame が直前で、かつ last_baked_markers にあった（=前回 Bake 時に
+    既知だった）マーカー。
+
+    継承で追加した cast_markers のエントリ数を返す。
+    """
+    current_markers = _get_camera_markers(scene)
+    last_known_names = {e.marker_name for e in st.last_baked_markers}
+    new_markers = [m for m in current_markers if m.name not in last_known_names]
+    if not new_markers:
+        return 0
+    inherited = 0
+    for nm in new_markers:
+        # 直前の既知マーカー（時系列で frame < nm.frame の最大）
+        prev = None
+        for m in current_markers:
+            if m.frame >= nm.frame:
+                break
+            if m.name in last_known_names:
+                prev = m
+        if prev is None:
+            continue
+        for g in st.groups:
+            if not any(c.marker_name == prev.name for c in g.cast_markers):
+                continue  # prev は OFF だったので継承不要
+            if any(c.marker_name == nm.name for c in g.cast_markers):
+                continue  # 既に設定済
+            entry = g.cast_markers.add()
+            entry.marker_name = nm.name
+            inherited += 1
+    return inherited
+
+
+def update_last_baked_markers(scene, st) -> None:
+    """last_baked_markers を現マーカーで全置換。"""
+    st.last_baked_markers.clear()
+    for m in _get_camera_markers(scene):
+        e = st.last_baked_markers.add()
+        e.marker_name = m.name
+        e.frame = m.frame
+
+
 def _resolve_solo_target(group):
     """Group の Solo target を決定。bound_object 優先、なければ最初の COLLECTION メンバの solo_target。"""
     if group.bound_object is not None:
@@ -114,18 +215,22 @@ def _resolve_solo_target(group):
     return None
 
 
-def bake_group_cast(scene, group, solo_mode: bool = False) -> tuple[int, int]:
+def bake_group_cast(scene, group, solo_mode: bool = False,
+                    extra_clear_frames: set | None = None) -> tuple[int, int]:
     """1 Group の cast_markers を hide_viewport / hide_render キーへ反映。
 
-    Shot Cast 優先: 既存の hide_viewport / hide_render fcurve は一度全削除してから
-    cast_markers に従って CONSTANT 補間で再構築する。
+    マーカーフレームのキーだけクリア → cast_markers に従って CONSTANT 補間で挿入。
+    マーカー外のフレームに手動で打ったキーは温存される。
+
+    extra_clear_frames: 削除されたマーカーの古い frame など、追加でクリアしたい
+      フレーム集合（呼び元が _get_old_marker_frames_to_clear で算出）。
 
     solo_mode=True のとき:
       - bound_object (or 最初の COLLECTION メンバの solo_target) のみ ON 中に可視
-      - 同 Group 内の他オブジェクトは ON 中も非表示（Solo target 1 個だけが見える）
+      - 同 Group 内の他オブジェクトは ON 中も非表示
       - OFF 期間中は通常モードと同じく全員非表示
 
-    Returns: (cleared_fcurves, inserted_keys)
+    Returns: (cleared_keys, inserted_keys)
     """
     markers = _get_camera_markers(scene)
     if not markers:
@@ -136,13 +241,16 @@ def bake_group_cast(scene, group, solo_mode: bool = False) -> tuple[int, int]:
 
     solo_obj = _resolve_solo_target(group) if solo_mode else None
 
-    # 1. 既存の hide_viewport / hide_render fcurve を全削除
-    from .keyframe_ops import _delete_matching
+    # クリア対象 frame 集合: 現マーカーフレーム + 削除済マーカーの旧フレーム
+    clear_frames = {m.frame for m in markers}
+    if extra_clear_frames:
+        clear_frames.update(extra_clear_frames)
+
     cleared = 0
     for o in objs:
-        cleared += _delete_matching(o, ("hide_viewport", "hide_render"), "ALL")
+        cleared += _clear_keys_at_frames(o, ("hide_viewport", "hide_render"), clear_frames)
 
-    # 2. cast_markers に従ってキー再挿入
+    # cast_markers に従ってキー再挿入
     inserted = 0
     for o in objs:
         is_solo = (solo_obj is not None and o.name == solo_obj.name)
@@ -150,10 +258,8 @@ def bake_group_cast(scene, group, solo_mode: bool = False) -> tuple[int, int]:
         for m in markers:
             cast_on = _group_appears_in(group, m.name)
             if solo_mode and solo_obj is not None:
-                # Solo モード: ON 中は solo_obj のみ可視、他は非表示
                 hidden = not (cast_on and is_solo)
             else:
-                # 通常モード: ON ならグループ全員可視、OFF なら全員非表示
                 hidden = not cast_on
             if prev_hidden is None or hidden != prev_hidden:
                 _insert_visibility_key(o, "hide_viewport", m.frame, hidden)
@@ -191,12 +297,17 @@ class YATOVIS_OT_cast_toggle(YatoVisOperator):
         currently = _group_appears_in(g, self.marker_name)
         _set_group_appearance(g, self.marker_name, not currently)
         if st.cast_auto_bake:
-            cleared, inserted = bake_group_cast(scene, g)
+            # sync (継承) + 削除マーカーの旧フレームを extra clear
+            inherited = sync_inherit_new_markers(scene, st)
+            extra = _get_old_marker_frames_to_clear(scene, st)
+            cleared, inserted = bake_group_cast(scene, g, extra_clear_frames=extra)
+            update_last_baked_markers(scene, st)
+            inh_str = f", inherited {inherited}" if inherited else ""
             self.report(
                 {"INFO"},
                 f"'{g.name}' @ '{self.marker_name}' → "
                 f"{'ON' if not currently else 'OFF'}, "
-                f"re-baked ({cleared} cleared / {inserted} keys)",
+                f"baked ({cleared} cleared / {inserted} keys{inh_str})",
             )
         else:
             self.report(
@@ -222,10 +333,14 @@ class YATOVIS_OT_cast_bake_group(YatoVisOperator):
             self.report({"WARNING"}, "Group が選択されていません")
             return {"CANCELLED"}
         g = st.groups[idx]
-        cleared, inserted = bake_group_cast(scene, g)
+        inherited = sync_inherit_new_markers(scene, st)
+        extra = _get_old_marker_frames_to_clear(scene, st)
+        cleared, inserted = bake_group_cast(scene, g, extra_clear_frames=extra)
+        update_last_baked_markers(scene, st)
+        inh_str = f", inherited {inherited}" if inherited else ""
         self.report(
             {"INFO"},
-            f"Re-baked '{g.name}': {cleared} fcurves cleared, {inserted} keys inserted",
+            f"Baked '{g.name}': {cleared} cleared, {inserted} keys{inh_str}",
         )
         return {"FINISHED"}
 
@@ -239,16 +354,19 @@ class YATOVIS_OT_cast_bake_all(YatoVisOperator):
     def run(self, context):
         scene = context.scene
         st = scene.yato_vis
+        inherited = sync_inherit_new_markers(scene, st)
+        extra = _get_old_marker_frames_to_clear(scene, st)
         total_cleared = 0
         total_inserted = 0
         for g in st.groups:
-            cleared, inserted = bake_group_cast(scene, g)
+            cleared, inserted = bake_group_cast(scene, g, extra_clear_frames=extra)
             total_cleared += cleared
             total_inserted += inserted
+        update_last_baked_markers(scene, st)
         self.report(
             {"INFO"},
-            f"Re-baked {len(st.groups)} group(s): "
-            f"{total_cleared} fcurves cleared, {total_inserted} keys inserted",
+            f"Baked {len(st.groups)} group(s): "
+            f"{total_cleared} cleared, {total_inserted} keys, inherited {inherited}",
         )
         return {"FINISHED"}
 
@@ -280,11 +398,15 @@ class YATOVIS_OT_cast_bake_group_solo(YatoVisOperator):
                 f"'{g.name}' に bound_object / solo_target がありません。通常 Bake をご利用ください",
             )
             return {"CANCELLED"}
-        cleared, inserted = bake_group_cast(scene, g, solo_mode=True)
+        inherited = sync_inherit_new_markers(scene, st)
+        extra = _get_old_marker_frames_to_clear(scene, st)
+        cleared, inserted = bake_group_cast(scene, g, solo_mode=True, extra_clear_frames=extra)
+        update_last_baked_markers(scene, st)
+        inh_str = f", inherited {inherited}" if inherited else ""
         self.report(
             {"INFO"},
             f"Solo Bake '{g.name}' (target={solo.name}): "
-            f"{cleared} cleared, {inserted} keys",
+            f"{cleared} cleared, {inserted} keys{inh_str}",
         )
         return {"FINISHED"}
 
@@ -301,21 +423,24 @@ class YATOVIS_OT_cast_bake_all_solo(YatoVisOperator):
     def run(self, context):
         scene = context.scene
         st = scene.yato_vis
+        inherited = sync_inherit_new_markers(scene, st)
+        extra = _get_old_marker_frames_to_clear(scene, st)
         total_cleared = 0
         total_inserted = 0
         solo_count = 0
         for g in st.groups:
             solo = _resolve_solo_target(g)
             use_solo = (solo is not None)
-            cleared, inserted = bake_group_cast(scene, g, solo_mode=use_solo)
+            cleared, inserted = bake_group_cast(scene, g, solo_mode=use_solo, extra_clear_frames=extra)
             total_cleared += cleared
             total_inserted += inserted
             if use_solo:
                 solo_count += 1
+        update_last_baked_markers(scene, st)
         self.report(
             {"INFO"},
             f"Solo Bake All: {solo_count}/{len(st.groups)} solo, "
-            f"{total_cleared} cleared, {total_inserted} keys",
+            f"{total_cleared} cleared, {total_inserted} keys, inherited {inherited}",
         )
         return {"FINISHED"}
 
@@ -463,6 +588,43 @@ class YATOVIS_OT_cast_import_from_visibility(YatoVisOperator):
             {"INFO"},
             f"Imported cast: {total_on} ON cells across {len(st.groups)} group(s) × {len(markers)} shot(s)",
         )
+        return {"FINISHED"}
+
+
+class YATOVIS_OT_cast_remove_orphans(YatoVisOperator):
+    """Group の cast_markers から、現マーカーに存在しないエントリ（orphan）を削除。"""
+    bl_idname = "yato_vis.cast_remove_orphans"
+    bl_label = "Remove Orphan Cast Entries"
+    bl_description = "現シーンに存在しない Marker を参照している cast_markers エントリを削除"
+
+    group_index: IntProperty(default=-1)
+
+    def run(self, context):
+        scene = context.scene
+        st = scene.yato_vis
+        idx = self.group_index if self.group_index >= 0 else st.active_group_index
+        current_names = {m.name for m in _get_camera_markers(scene)}
+        removed = 0
+        if idx < 0:
+            # 全 Group 対象
+            for g in st.groups:
+                i = len(g.cast_markers) - 1
+                while i >= 0:
+                    if g.cast_markers[i].marker_name not in current_names:
+                        g.cast_markers.remove(i)
+                        removed += 1
+                    i -= 1
+        else:
+            if not (0 <= idx < len(st.groups)):
+                return {"CANCELLED"}
+            g = st.groups[idx]
+            i = len(g.cast_markers) - 1
+            while i >= 0:
+                if g.cast_markers[i].marker_name not in current_names:
+                    g.cast_markers.remove(i)
+                    removed += 1
+                i -= 1
+        self.report({"INFO"}, f"Removed {removed} orphan cast entry(ies)")
         return {"FINISHED"}
 
 

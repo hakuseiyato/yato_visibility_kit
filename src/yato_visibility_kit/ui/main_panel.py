@@ -400,6 +400,21 @@ class YATOVIS_PT_shot_cast(bpy.types.Panel):
             icon="IMPORT",
         )
 
+        # オーファン検出: cast_markers のうち現マーカーに無いものをまとめて表示
+        current_marker_names = {m.name for m in cam_markers}
+        total_orphans = 0
+        for g in st.groups:
+            for c in g.cast_markers:
+                if c.marker_name not in current_marker_names:
+                    total_orphans += 1
+        if total_orphans > 0:
+            warn = layout.box()
+            warn.alert = True
+            wrow = warn.row(align=True)
+            wrow.label(text=f"⚠ Orphan entries: {total_orphans} (削除/リネーム済 marker)", icon="ERROR")
+            op = wrow.operator("yato_vis.cast_remove_orphans", text="Clean All", icon="BRUSH_DATA")
+            op.group_index = -1
+
         # Cast マトリクス: 行 = Group, 列 = Shot
         # 多ショット対応のため 10 個/行で折り返し
         layout.separator()
@@ -435,6 +450,18 @@ class YATOVIS_PT_shot_cast(bpy.types.Panel):
                     )
                     op.group_index = gi
                     op.marker_name = m.name
+
+            # この Group のオーファンエントリ
+            group_orphans = [c.marker_name for c in g.cast_markers
+                             if c.marker_name not in current_marker_names]
+            if group_orphans:
+                orow = gbox.row(align=True)
+                orow.alert = True
+                orow.label(text=f"⚠ Orphan: {', '.join(group_orphans[:5])}" +
+                                (f" +{len(group_orphans)-5}" if len(group_orphans) > 5 else ""),
+                            icon="ERROR")
+                op = orow.operator("yato_vis.cast_remove_orphans", text="", icon="X")
+                op.group_index = gi
 
 
 # ---------------------------------------------------------------------------

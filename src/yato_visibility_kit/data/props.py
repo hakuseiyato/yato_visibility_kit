@@ -60,6 +60,12 @@ class YatoVisCastMarker(PropertyGroup):
     marker_name: StringProperty(name="Marker", default="")
 
 
+class YatoVisBakedMarker(PropertyGroup):
+    """前回 Bake 時のマーカー snapshot。差分検出（新規/削除）の基準。"""
+    marker_name: StringProperty(default="")
+    frame: IntProperty(default=0)
+
+
 def _bound_object_poll(self, obj):
     """Group の COLLECTION メンバ内のオブジェクトのみ選択可能にする。"""
     for m in self.members:
@@ -161,3 +167,5 @@ class YatoVisSceneSettings(PropertyGroup):
         description="Shot Cast のチェックボックス変更時に自動でキーフレームへ反映",
         default=True,
     )
+    # Shot Cast: 前回 Bake 時のマーカー snapshot（差分検出基準）
+    last_baked_markers: CollectionProperty(type=YatoVisBakedMarker)
