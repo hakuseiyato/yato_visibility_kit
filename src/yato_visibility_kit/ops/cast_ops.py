@@ -56,19 +56,24 @@ def _group_appears_in_shot(scene, group, marker_name: str) -> bool:
 
     shots[N].cast に group.name と一致するエントリがあれば出演。
     旧 cast_markers は fallback として残置。
+
+    **重要**: `shots.get(name)` は item の `.name` フィールドで照合するため、
+    shot.name != marker_name のケース（rename 後 / .name と .marker_name が
+    一致しないケース）で誤った shot を返すバグの可能性があった。
+    Phase 2 fix: 常に `.marker_name` で線形検索する（数十件規模なら無視できる
+    コスト）。
     """
     if _kinema_shots_available(scene):
         try:
             target = group.name
         except Exception:
             return False
-        shot = scene.kinema.shots.get(marker_name)
-        # shots[] は marker_name で索引できないので線形検索
-        if shot is None:
-            for s in scene.kinema.shots:
-                if s.marker_name == marker_name:
-                    shot = s
-                    break
+        # 必ず marker_name で照合（.get() は .name 照合なので使わない）
+        shot = None
+        for s in scene.kinema.shots:
+            if s.marker_name == marker_name:
+                shot = s
+                break
         if shot is None:
             return False
         for c in shot.cast:
@@ -110,9 +115,33 @@ def _set_group_appearance(group, marker_name: str, appears: bool) -> None:
 
 
 def _insert_visibility_key(obj, channel: str, frame: int, value: bool) -> None:
-    """obj.channel に frame で value を CONSTANT 補間でキー挿入。"""
+    """obj.channel に frame で value を CONSTANT 補間でキー挿入。
+
+    **重要**: Auto Keyframe (use_keyframe_insert_auto) が ON のとき、
+    setattr(obj, channel, ...) が現フレームに自動キーを刺してしまう。
+    これが入れた直後の `setattr(obj, channel, saved)` で「現フレームでは
+    元の値に戻る」キーを上書きして、結果として bake が無効化される。
+
+    対策: bake 中は use_keyframe_insert_auto を一時 OFF にして、終了後に復元。
+    """
     if obj is None or getattr(obj, channel, None) is None:
         return
+    # Auto Keyframe を一時 OFF（depsgraph mutation 防止）
+    scene = None
+    try:
+        import bpy as _bpy
+        scene = _bpy.context.scene
+    except Exception:
+        pass
+    auto_kf_saved = False
+    if scene is not None:
+        try:
+            auto_kf_saved = scene.tool_settings.use_keyframe_insert_auto
+            if auto_kf_saved:
+                scene.tool_settings.use_keyframe_insert_auto = False
+        except Exception:
+            auto_kf_saved = False
+
     saved = getattr(obj, channel)
     try:
         setattr(obj, channel, value)
@@ -125,6 +154,12 @@ def _insert_visibility_key(obj, channel: str, frame: int, value: bool) -> None:
             setattr(obj, channel, saved)
         except Exception:
             pass
+        # Auto Keyframe を復元
+        if scene is not None and auto_kf_saved:
+            try:
+                scene.tool_settings.use_keyframe_insert_auto = True
+            except Exception:
+                pass
     # CONSTANT 補間に
     ad = obj.animation_data
     if ad is None or ad.action is None:
