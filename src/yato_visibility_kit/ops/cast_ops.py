@@ -30,10 +30,66 @@ def _get_camera_markers(scene):
     )
 
 
+# ---------------------------------------------------------------------------
+# kinema.shots[] ベースの cast 解決（Phase 2 で導入）
+# ---------------------------------------------------------------------------
+
+def _kinema_shots_available(scene) -> bool:
+    """scene.kinema.shots[] が canonical schema として使えるか判定。
+
+    `data_format_version >= 2` かつ shots[] が空でないことを条件とする。
+    """
+    k = getattr(scene, "kinema", None)
+    if k is None:
+        return False
+    dfv = getattr(k, "data_format_version", 1)
+    if dfv < 2:
+        return False
+    try:
+        return len(k.shots) > 0
+    except Exception:
+        return False
+
+
+def _group_appears_in_shot(scene, group, marker_name: str) -> bool:
+    """Phase 2: kinema.shots[] から group の出演を判定。
+
+    shots[N].cast に group.name と一致するエントリがあれば出演。
+    旧 cast_markers は fallback として残置。
+    """
+    if _kinema_shots_available(scene):
+        try:
+            target = group.name
+        except Exception:
+            return False
+        shot = scene.kinema.shots.get(marker_name)
+        # shots[] は marker_name で索引できないので線形検索
+        if shot is None:
+            for s in scene.kinema.shots:
+                if s.marker_name == marker_name:
+                    shot = s
+                    break
+        if shot is None:
+            return False
+        for c in shot.cast:
+            if c.group_name == target and c.enabled:
+                return True
+        return False
+    # legacy fallback
+    return _group_appears_in(group, marker_name)
+
+
 def _group_appears_in(group, marker_name: str) -> bool:
-    for c in group.cast_markers:
-        if c.marker_name == marker_name:
-            return True
+    """**legacy fallback**: 旧 group.cast_markers から判定。
+
+    Phase 2 以降、`scene.kinema.shots[]` があればそちらを優先。
+    """
+    try:
+        for c in group.cast_markers:
+            if c.marker_name == marker_name:
+                return True
+    except Exception:
+        pass
     return False
 
 
@@ -250,13 +306,14 @@ def bake_group_cast(scene, group, solo_mode: bool = False,
     for o in objs:
         cleared += _clear_keys_at_frames(o, ("hide_viewport", "hide_render"), clear_frames)
 
-    # cast_markers に従ってキー再挿入
+    # cast 状態に従ってキー再挿入
+    # Phase 2: kinema.shots[] があればそちらを優先、無ければ旧 cast_markers
     inserted = 0
     for o in objs:
         is_solo = (solo_obj is not None and o.name == solo_obj.name)
         prev_hidden = None
         for m in markers:
-            cast_on = _group_appears_in(group, m.name)
+            cast_on = _group_appears_in_shot(scene, group, m.name)
             if solo_mode and solo_obj is not None:
                 hidden = not (cast_on and is_solo)
             else:
