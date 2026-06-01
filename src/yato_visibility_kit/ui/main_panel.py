@@ -355,7 +355,14 @@ def _collect_group_visibility_frames(group) -> list[int]:
 # ---------------------------------------------------------------------------
 
 class YATOVIS_PT_shot_cast(bpy.types.Panel):
-    bl_label = "Shot Cast"
+    """Shot Cast パネル（Phase C で kinema 側に統合済み）。
+
+    後方互換のため空パネルを残してあるが、操作は kinema の Shot Manager
+    パネル（3D View > N panel > Yato タブ > Shots）で完結する。
+    旧 cast_markers が残っているシーン用に Bake All / Import / Cleanup の
+    最小ボタンだけ残置。
+    """
+    bl_label = "Shot Cast (Legacy)"
     bl_idname = "YATOVIS_PT_shot_cast"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -368,100 +375,42 @@ class YATOVIS_PT_shot_cast(bpy.types.Panel):
         scene = context.scene
         st = scene.yato_vis
 
-        # カメラマーカー一覧
+        # 案内
+        info = layout.box()
+        info.label(text="Shot Cast の操作は", icon="INFO")
+        info.label(text="  Shots パネル (Yato タブ) に統合されました")
+
+        # 最小限のメンテツール
         cam_markers = sorted(
             (m for m in scene.timeline_markers if m.camera is not None),
             key=lambda m: m.frame,
         )
-
-        head = layout.row(align=True)
-        head.label(text=f"Shots: {len(cam_markers)} / Groups: {len(st.groups)}")
-        head.prop(st, "cast_auto_bake", text="Auto Bake", toggle=True, icon="REC")
-
-        if not cam_markers:
-            layout.label(text="カメラ付き Timeline Marker がありません", icon="INFO")
-            layout.label(text="(Marker > Bind Camera to Marker で作成)")
+        if not cam_markers or len(st.groups) == 0:
             return
-        if len(st.groups) == 0:
-            layout.label(text="Group がありません", icon="INFO")
-            return
-
-        # 一括 Bake / Solo Bake / Import
-        op_row = layout.row(align=True)
-        op_row.operator("yato_vis.cast_bake_all", text="Bake All", icon="PLAY")
-        op_row.operator(
-            "yato_vis.cast_bake_all_solo",
-            text="Solo Bake All",
-            icon="SOLO_ON",
-        )
-        op_row.operator(
-            "yato_vis.cast_import_from_visibility",
-            text="Import",
-            icon="IMPORT",
-        )
-
-        # オーファン検出: cast_markers のうち現マーカーに無いものをまとめて表示
         current_marker_names = {m.name for m in cam_markers}
         total_orphans = 0
         for g in st.groups:
             for c in g.cast_markers:
                 if c.marker_name not in current_marker_names:
                     total_orphans += 1
+        legacy_tools = layout.box()
+        legacy_tools.label(text="Legacy Tools", icon="MODIFIER")
+        op_row = legacy_tools.row(align=True)
+        op_row.operator("yato_vis.cast_bake_all", text="Bake All", icon="PLAY")
+        op_row.operator(
+            "yato_vis.cast_import_from_visibility",
+            text="Import from Anim", icon="IMPORT",
+        )
         if total_orphans > 0:
-            warn = layout.box()
+            warn = legacy_tools.row(align=True)
             warn.alert = True
-            wrow = warn.row(align=True)
-            wrow.label(text=f"⚠ Orphan entries: {total_orphans} (削除/リネーム済 marker)", icon="ERROR")
-            op = wrow.operator("yato_vis.cast_remove_orphans", text="Clean All", icon="BRUSH_DATA")
-            op.group_index = -1
-
-        # Cast マトリクス: 行 = Group, 列 = Shot
-        # 多ショット対応のため 10 個/行で折り返し
-        layout.separator()
-        layout.label(text="行: Group / 列: Shot (10/行で折り返し)", icon="GROUP")
-
-        CHUNK = 10
-        for gi, g in enumerate(st.groups):
-            gbox = layout.box()
-            grow = gbox.row(align=True)
-            if gi == st.active_group_index:
-                grow.alert = True
-            grow.label(text=g.name, icon="AUTO" if g.is_auto else "GROUP")
-            cast_count = len(g.cast_markers)
-            grow.label(text=f"{cast_count}/{len(cam_markers)}")
-            bake = grow.operator("yato_vis.cast_bake_group", text="", icon="PLAY")
-            bake.group_index = gi
-            # Solo Bake — bound_object だけ ON 期間中に可視
-            solo_bake = grow.operator(
-                "yato_vis.cast_bake_group_solo", text="", icon="SOLO_ON",
+            warn.label(
+                text=f"⚠ Orphan entries: {total_orphans}", icon="ERROR",
             )
-            solo_bake.group_index = gi
-
-            # ショットボタンを CHUNK 個ずつチャンクして行を作る
-            for chunk_start in range(0, len(cam_markers), CHUNK):
-                cast_row = gbox.row(align=True)
-                cast_row.scale_y = 0.9
-                for m in cam_markers[chunk_start:chunk_start + CHUNK]:
-                    appears = any(c.marker_name == m.name for c in g.cast_markers)
-                    op = cast_row.operator(
-                        "yato_vis.cast_toggle",
-                        text=m.name,
-                        depress=appears,
-                    )
-                    op.group_index = gi
-                    op.marker_name = m.name
-
-            # この Group のオーファンエントリ
-            group_orphans = [c.marker_name for c in g.cast_markers
-                             if c.marker_name not in current_marker_names]
-            if group_orphans:
-                orow = gbox.row(align=True)
-                orow.alert = True
-                orow.label(text=f"⚠ Orphan: {', '.join(group_orphans[:5])}" +
-                                (f" +{len(group_orphans)-5}" if len(group_orphans) > 5 else ""),
-                            icon="ERROR")
-                op = orow.operator("yato_vis.cast_remove_orphans", text="", icon="X")
-                op.group_index = gi
+            op = warn.operator(
+                "yato_vis.cast_remove_orphans", text="Clean", icon="BRUSH_DATA",
+            )
+            op.group_index = -1
 
 
 # ---------------------------------------------------------------------------

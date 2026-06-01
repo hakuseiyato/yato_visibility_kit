@@ -52,36 +52,41 @@ def _kinema_shots_available(scene) -> bool:
 
 
 def _group_appears_in_shot(scene, group, marker_name: str) -> bool:
-    """Phase 2: kinema.shots[] から group の出演を判定。
+    """Phase 2: kinema.shots[] から group の出演を判定。"""
+    cast_on, _ = _resolve_cast_state_at_shot(scene, group, marker_name)
+    return cast_on
 
-    shots[N].cast に group.name と一致するエントリがあれば出演。
-    旧 cast_markers は fallback として残置。
 
-    **重要**: `shots.get(name)` は item の `.name` フィールドで照合するため、
-    shot.name != marker_name のケース（rename 後 / .name と .marker_name が
-    一致しないケース）で誤った shot を返すバグの可能性があった。
-    Phase 2 fix: 常に `.marker_name` で線形検索する（数十件規模なら無視できる
-    コスト）。
+def _resolve_cast_state_at_shot(scene, group, marker_name: str) -> tuple[bool, str]:
+    """指定 marker での group の (出演フラグ, solo_target_name) を返す。
+
+    Phase A: shot ごとに **per-cast solo target** を持てるようにする。
+    - 出演 ON かつ solo_target_name が指定されていれば、その shot ではその
+      object 名だけ可視（group 内の他は hidden）にする solo モード扱い。
+    - solo_target_name 空なら group 全員可視（通常モード）。
+
+    Returns: (cast_on, solo_target_name)
     """
     if _kinema_shots_available(scene):
         try:
             target = group.name
         except Exception:
-            return False
-        # 必ず marker_name で照合（.get() は .name 照合なので使わない）
+            return (False, "")
+        # marker_name で線形検索
         shot = None
         for s in scene.kinema.shots:
             if s.marker_name == marker_name:
                 shot = s
                 break
         if shot is None:
-            return False
+            return (False, "")
         for c in shot.cast:
             if c.group_name == target and c.enabled:
-                return True
-        return False
+                solo_name = getattr(c, "solo_target_name", "") or ""
+                return (True, solo_name)
+        return (False, "")
     # legacy fallback
-    return _group_appears_in(group, marker_name)
+    return (_group_appears_in(group, marker_name), "")
 
 
 def _group_appears_in(group, marker_name: str) -> bool:
@@ -341,18 +346,35 @@ def bake_group_cast(scene, group, solo_mode: bool = False,
     for o in objs:
         cleared += _clear_keys_at_frames(o, ("hide_viewport", "hide_render"), clear_frames)
 
-    # cast 状態に従ってキー再挿入
-    # Phase 2: kinema.shots[] があればそちらを優先、無ければ旧 cast_markers
+    # cast 状態に従ってキー再挿入。
+    # **Phase A**: shot ごとに per-cast solo_target_name を尊重する。
+    #
+    #   shot.cast[group].solo_target_name == "Foo"
+    #     → この shot ではこの group の中で "Foo" だけ可視（他は hidden）
+    #   solo_target_name 空 + solo_mode=True (group level fallback)
+    #     → group.bound_object / member.solo_target を solo に使う
+    #   両方無し
+    #     → 通常モード (group 全員可視)
     inserted = 0
     for o in objs:
-        is_solo = (solo_obj is not None and o.name == solo_obj.name)
         prev_hidden = None
         for m in markers:
-            cast_on = _group_appears_in_shot(scene, group, m.name)
-            if solo_mode and solo_obj is not None:
+            cast_on, shot_solo_target = _resolve_cast_state_at_shot(
+                scene, group, m.name,
+            )
+            # Solo target を決定（shot 単位 > group 単位）
+            effective_solo = ""
+            if shot_solo_target:
+                effective_solo = shot_solo_target
+            elif solo_mode and solo_obj is not None:
+                effective_solo = solo_obj.name
+
+            if effective_solo:
+                is_solo = (o.name == effective_solo)
                 hidden = not (cast_on and is_solo)
             else:
                 hidden = not cast_on
+
             if prev_hidden is None or hidden != prev_hidden:
                 _insert_visibility_key(o, "hide_viewport", m.frame, hidden)
                 _insert_visibility_key(o, "hide_render", m.frame, hidden)

@@ -148,6 +148,17 @@ class YATOVIS_OT_match_transform_to_active(YatoVisOperator):
     use_location: BoolProperty(name="Location", default=True)
     use_rotation: BoolProperty(name="Rotation", default=True)
     use_scale: BoolProperty(name="Scale", default=True)
+    # Phase A 追加: 既存 fcurve が残っているとフレーム移動で値が戻るバグ対策。
+    # ON にすると、Match 前に対象 path の fcurve を削除して静的値に固定する。
+    clear_existing_fcurves: BoolProperty(
+        name="Clear Existing Animation",
+        description=(
+            "Match 前に対象 path の fcurve を削除して固定値にする。"
+            "アニメーションが残っているとフレーム移動で MatchAll の結果が"
+            "巻き戻されるため、固定したい時に ON にする"
+        ),
+        default=False,
+    )
 
     def _copy_rotation(self, src, dst) -> None:
         """src.rotation_mode に合わせて dst の rotation を上書き。
@@ -166,6 +177,41 @@ class YATOVIS_OT_match_transform_to_active(YatoVisOperator):
         else:
             dst.rotation_euler = src.rotation_euler
 
+    def _clear_fcurves_for(self, obj, paths: tuple) -> int:
+        """obj の指定 data_path 群の fcurve を削除する。
+
+        rotation 系は mode によって _euler / _quaternion / _axis_angle が
+        分かれるので、paths にあれば全部試す。
+        """
+        ad = getattr(obj, "animation_data", None)
+        if ad is None or ad.action is None:
+            return 0
+        action = ad.action
+        # Layered Actions 両対応で fcurve container を集める
+        fc_containers: list = []
+        if hasattr(action, "fcurves"):
+            fc_containers.append(action.fcurves)
+        else:
+            for layer in getattr(action, "layers", None) or []:
+                for strip in getattr(layer, "strips", None) or []:
+                    for slot in getattr(action, "slots", None) or []:
+                        try:
+                            cb = strip.channelbag(slot)
+                        except Exception:
+                            cb = None
+                        if cb is not None and hasattr(cb, "fcurves"):
+                            fc_containers.append(cb.fcurves)
+        removed = 0
+        for container in fc_containers:
+            for fc in list(container):
+                try:
+                    if fc.data_path in paths:
+                        container.remove(fc)
+                        removed += 1
+                except Exception:
+                    pass
+        return removed
+
     def run(self, context):
         active = context.active_object
         if active is None:
@@ -178,6 +224,22 @@ class YATOVIS_OT_match_transform_to_active(YatoVisOperator):
         if not targets:
             self.report({"WARNING"}, "アクティブ以外の選択オブジェクトがありません")
             return {"CANCELLED"}
+
+        # Phase A: 先に既存 fcurve を削除（オプション）
+        cleared_fcurves = 0
+        if self.clear_existing_fcurves:
+            paths_to_clear: list = []
+            if self.use_location:
+                paths_to_clear.append("location")
+            if self.use_rotation:
+                paths_to_clear.extend(["rotation_euler", "rotation_quaternion",
+                                       "rotation_axis_angle"])
+            if self.use_scale:
+                paths_to_clear.append("scale")
+            paths_tuple = tuple(paths_to_clear)
+            for dst in targets:
+                cleared_fcurves += self._clear_fcurves_for(dst, paths_tuple)
+
         kf = _should_keyframe(context)
         frame = context.scene.frame_current if kf else None
         count = 0
@@ -221,9 +283,10 @@ class YATOVIS_OT_match_transform_to_active(YatoVisOperator):
             ) if on
         )
         kf_str = " +KF" if kf else ""
+        clear_str = f" (cleared {cleared_fcurves} fcurves)" if cleared_fcurves else ""
         self.report(
             {"INFO"},
-            f"Match {which} → Active '{active.name}' on {len(targets)} obj(s){kf_str}",
+            f"Match {which} → Active '{active.name}' on {len(targets)} obj(s){kf_str}{clear_str}",
         )
         return {"FINISHED"}
 
