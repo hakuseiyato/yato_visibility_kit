@@ -221,6 +221,65 @@ def _iter_action_fcurves(action):
                     yield fc
 
 
+def _wipe_visibility_fcurves(obj, channels: tuple = ("hide_viewport", "hide_render")) -> int:
+    """obj から hide_viewport / hide_render の fcurve **そのもの** を全削除する。
+
+    `_clear_keys_at_frames` は marker frame でしか key を消さないため、過去 bake や
+    手動キー打ちで残った非 marker frame の key が居座って優先される問題があった。
+    完全な「破壊して再構築」を行うため、fcurve 自体を action から remove する。
+
+    Layered Actions 対応: legacy fcurves と各 channelbag.fcurves 両方を回す。
+    削除した fcurve 数を返す。
+    """
+    if obj is None or obj.animation_data is None or obj.animation_data.action is None:
+        return 0
+    action = obj.animation_data.action
+    removed = 0
+    # legacy fcurves
+    legacy_fcurves = getattr(action, "fcurves", None)
+    if legacy_fcurves is not None:
+        targets = []
+        for fc in legacy_fcurves:
+            try:
+                if fc.data_path in channels:
+                    targets.append(fc)
+            except Exception:
+                continue
+        for fc in targets:
+            try:
+                legacy_fcurves.remove(fc)
+                removed += 1
+            except Exception:
+                pass
+    # Layered Actions
+    for layer in getattr(action, "layers", None) or []:
+        for strip in getattr(layer, "strips", None) or []:
+            for slot in getattr(action, "slots", None) or []:
+                try:
+                    cb = strip.channelbag(slot)
+                except Exception:
+                    cb = None
+                if cb is None:
+                    continue
+                cb_fcurves = getattr(cb, "fcurves", None)
+                if cb_fcurves is None:
+                    continue
+                targets = []
+                for fc in cb_fcurves:
+                    try:
+                        if fc.data_path in channels:
+                            targets.append(fc)
+                    except Exception:
+                        continue
+                for fc in targets:
+                    try:
+                        cb_fcurves.remove(fc)
+                        removed += 1
+                    except Exception:
+                        pass
+    return removed
+
+
 def _clear_keys_at_frames(obj, channels: tuple, frames_set: set) -> int:
     """obj の指定 channels (hide_viewport / hide_render 等) の指定フレーム群に
     あるキーフレームポイントだけを削除（fcurve 自体は残す）。
@@ -309,6 +368,51 @@ def _resolve_solo_target(group):
         if m.member_type == "COLLECTION" and m.solo_target is not None:
             return m.solo_target
     return None
+
+
+def bake_group_cast_clean_rebuild(scene, group) -> tuple[int, int]:
+    """**破壊的再構築 bake**: 全 visibility fcurve を消してから marker ごとに
+    明示的にキーを打ち直す。
+
+    通常の bake_group_cast との違い:
+      - 全 hide_viewport / hide_render fcurve を action から削除（marker 外の
+        手動キーや過去 bake の残骸を含めて全消去）
+      - prev_hidden 最適化を使わず、**全 marker に必ずキーを挿入**
+        （同状態が続くフレームでも明示的に key を打つ）→ 過去キーの侵入余地ゼロ
+
+    用途: 「カット内に過去のキーが残ってる group が居座る」問題のリセット。
+    Shots パネルの "Rebuild" ボタンから呼ぶ。
+
+    Returns: (wiped_fcurves, inserted_keys)
+    """
+    markers = _get_camera_markers(scene)
+    if not markers:
+        return (0, 0)
+    objs = group_all_objects(group)
+    if not objs:
+        return (0, 0)
+
+    wiped = 0
+    for o in objs:
+        wiped += _wipe_visibility_fcurves(o, ("hide_viewport", "hide_render"))
+
+    inserted = 0
+    for o in objs:
+        for m in markers:
+            cast_on, shot_solo_target = _resolve_cast_state_at_shot(
+                scene, group, m.name,
+            )
+            effective_solo = shot_solo_target or ""
+            if effective_solo:
+                is_solo = (o.name == effective_solo)
+                hidden = not (cast_on and is_solo)
+            else:
+                hidden = not cast_on
+            # **明示的に全 marker に key 挿入**（prev_hidden 最適化を使わない）
+            _insert_visibility_key(o, "hide_viewport", m.frame, hidden)
+            _insert_visibility_key(o, "hide_render", m.frame, hidden)
+            inserted += 2
+    return (wiped, inserted)
 
 
 def bake_group_cast(scene, group, solo_mode: bool = False,
