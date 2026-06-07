@@ -1,13 +1,14 @@
-"""3D View > Sidebar (N) > Yato > Visibility パネル群。
+"""3D View > Sidebar (N) > Yato タブ > Shots パネル配下に統合済。
 
-サブパネル構成:
-  YATOVIS_PT_main (親)
+サブパネル構成（kinema KINEMA_PT_shot_manager の子として表示）:
+    ├ YATOVIS_PT_groups     Groups (+ Active Group detail)
     ├ YATOVIS_PT_quick      Quick Toggle
     ├ YATOVIS_PT_burst      Burst & Range
-    ├ YATOVIS_PT_groups     Groups (+ Active Group detail)
-    ├ YATOVIS_PT_shot_cast  Shot Cast (per Camera Marker)
     ├ YATOVIS_PT_active     Active Object Transform / Key
     └ YATOVIS_PT_snapshots  Snapshots
+
+旧 YATOVIS_PT_main (umbrella) と YATOVIS_PT_shot_cast (legacy stub) は削除。
+Shot Cast 操作は kinema の Shots パネルに完全統合済。
 
 UIList の draw_item は名前が潰れないよう最小限の widget だけを並べる。
 """
@@ -79,20 +80,8 @@ class YATOVIS_UL_snapshots(bpy.types.UIList):
         row.label(text=f"{alive}⚠" if dead else f"{alive}")
 
 
-# ---------------------------------------------------------------------------
-# Main panel (空)
-# ---------------------------------------------------------------------------
-
-class YATOVIS_PT_main(bpy.types.Panel):
-    bl_label = "Visibility"
-    bl_idname = "YATOVIS_PT_main"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = CATEGORY
-
-    def draw(self, context):
-        # 本体は空。子サブパネルが描画する。
-        pass
+# 全サブパネルの共通親 (kinema の Shots パネル配下に表示)
+_PARENT_ID = "KINEMA_PT_shot_manager"
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +94,8 @@ class YATOVIS_PT_quick(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
-    bl_parent_id = "YATOVIS_PT_main"
+    bl_parent_id = _PARENT_ID
+    bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
         layout = self.layout
@@ -137,7 +127,7 @@ class YATOVIS_PT_burst(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
-    bl_parent_id = "YATOVIS_PT_main"
+    bl_parent_id = _PARENT_ID
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
@@ -194,7 +184,8 @@ class YATOVIS_PT_groups(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
-    bl_parent_id = "YATOVIS_PT_main"
+    bl_parent_id = _PARENT_ID
+    bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
         layout = self.layout
@@ -357,60 +348,9 @@ def _collect_group_visibility_frames(group) -> list[int]:
 class YATOVIS_PT_shot_cast(bpy.types.Panel):
     """Shot Cast パネル（Phase C で kinema 側に統合済み）。
 
-    後方互換のため空パネルを残してあるが、操作は kinema の Shot Manager
-    パネル（3D View > N panel > Yato タブ > Shots）で完結する。
-    旧 cast_markers が残っているシーン用に Bake All / Import / Cleanup の
-    最小ボタンだけ残置。
-    """
-    bl_label = "Shot Cast (Legacy)"
-    bl_idname = "YATOVIS_PT_shot_cast"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = CATEGORY
-    bl_parent_id = "YATOVIS_PT_main"
-    bl_options = {"DEFAULT_CLOSED"}
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        st = scene.yato_vis
-
-        # 案内
-        info = layout.box()
-        info.label(text="Shot Cast の操作は", icon="INFO")
-        info.label(text="  Shots パネル (Yato タブ) に統合されました")
-
-        # 最小限のメンテツール
-        cam_markers = sorted(
-            (m for m in scene.timeline_markers if m.camera is not None),
-            key=lambda m: m.frame,
-        )
-        if not cam_markers or len(st.groups) == 0:
-            return
-        current_marker_names = {m.name for m in cam_markers}
-        total_orphans = 0
-        for g in st.groups:
-            for c in g.cast_markers:
-                if c.marker_name not in current_marker_names:
-                    total_orphans += 1
-        legacy_tools = layout.box()
-        legacy_tools.label(text="Legacy Tools", icon="MODIFIER")
-        op_row = legacy_tools.row(align=True)
-        op_row.operator("yato_vis.cast_bake_all", text="Bake All", icon="PLAY")
-        op_row.operator(
-            "yato_vis.cast_import_from_visibility",
-            text="Import from Anim", icon="IMPORT",
-        )
-        if total_orphans > 0:
-            warn = legacy_tools.row(align=True)
-            warn.alert = True
-            warn.label(
-                text=f"⚠ Orphan entries: {total_orphans}", icon="ERROR",
-            )
-            op = warn.operator(
-                "yato_vis.cast_remove_orphans", text="Clean", icon="BRUSH_DATA",
-            )
-            op.group_index = -1
+# YATOVIS_PT_shot_cast (legacy stub) は削除済。Shot Cast 操作は kinema の
+# Shots パネル (KINEMA_PT_shot_manager) に完全統合された。
+# Bake All / Import from Anim / orphan cleanup は kinema 側のメンテボタンに移管。
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +363,7 @@ class YATOVIS_PT_active(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
-    bl_parent_id = "YATOVIS_PT_main"
+    bl_parent_id = _PARENT_ID
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
@@ -493,7 +433,7 @@ class YATOVIS_PT_snapshots(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = CATEGORY
-    bl_parent_id = "YATOVIS_PT_main"
+    bl_parent_id = _PARENT_ID
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
