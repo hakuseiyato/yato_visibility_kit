@@ -342,15 +342,10 @@ def _collect_group_visibility_frames(group) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
-# Shot Cast
-# ---------------------------------------------------------------------------
-
-class YATOVIS_PT_shot_cast(bpy.types.Panel):
-    """Shot Cast パネル（Phase C で kinema 側に統合済み）。
-
-# YATOVIS_PT_shot_cast (legacy stub) は削除済。Shot Cast 操作は kinema の
-# Shots パネル (KINEMA_PT_shot_manager) に完全統合された。
+# YATOVIS_PT_shot_cast (legacy stub) は削除済。
+# Shot Cast 操作は kinema の Shots パネル (KINEMA_PT_shot_manager) に完全統合された。
 # Bake All / Import from Anim / orphan cleanup は kinema 側のメンテボタンに移管。
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
